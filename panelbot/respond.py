@@ -5,19 +5,15 @@ conversational reply suitable for being spoken aloud on a panel. The transcript
 is sent as a single user turn each time; the system prompt carries the persona
 and the "keep it brief / spoken" constraints.
 
-The reply is streamed and cut into sentences as they complete, so the caller
-can start speaking the first sentence while later ones are still being
-generated — this matters most on long replies, where waiting for the full
-response would otherwise mean a long silence before anything is said.
+The reply is streamed as raw text deltas — no sentence-splitting here. TTS
+(see `tts.py`) feeds those deltas straight into ElevenLabs' websocket endpoint,
+which keeps one synthesis context for the whole utterance; pre-chunking into
+sentences ourselves was causing audible glitches/resets at each chunk boundary.
 """
-
-import re
 
 import anthropic
 
 import config
-
-_SENTENCE_END = re.compile(r"[.!?]+(?=\s|$)")
 
 SYSTEM = f"""You are {config.BOT_NAME}, a participant in {config.PANEL_TOPIC} \
 alongside one or more humans. You hear a live transcript of the room.
@@ -59,7 +55,7 @@ class Responder:
         return self._recent(n)
 
     def reply_stream(self, reason: str = ""):
-        """Stream the next spoken line, yielding complete sentences as they arrive.
+        """Stream the next spoken line, yielding raw text deltas as they arrive.
 
         `reason` is the turn-taking model's free-text reason for speaking now
         (e.g. "addressed by name", "falling intonation + real lull") — passed
@@ -70,7 +66,6 @@ class Responder:
 
         prompt = f"Here is the recent conversation:\n\n{self._recent()}\n\n{nudge}"
 
-        buffer = ""
         parts: list[str] = []
         with self.client.messages.stream(
             model=config.MODEL,
@@ -79,19 +74,8 @@ class Responder:
             messages=[{"role": "user", "content": prompt}],
         ) as stream:
             for delta in stream.text_stream:
-                buffer += delta
                 parts.append(delta)
-                while True:
-                    m = _SENTENCE_END.search(buffer)
-                    if not m:
-                        break
-                    sentence, buffer = buffer[:m.end()].strip(), buffer[m.end():]
-                    if sentence:
-                        yield sentence
-
-        tail = buffer.strip()
-        if tail:
-            yield tail
+                yield delta
 
         full_text = "".join(parts).strip()
         if full_text:

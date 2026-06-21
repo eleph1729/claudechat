@@ -53,13 +53,18 @@ def main():
             if decision == Decision.SPEAK:
                 mic.speaking.set()          # mute input while we talk
                 spoke = False
-                try:
-                    for sentence in responder.reply_stream(turns.last_note):
+
+                def _tee():
+                    nonlocal spoke
+                    for delta in responder.reply_stream(turns.last_note):
                         if not spoke:
                             print(f"{config.BOT_NAME}: ", end="", flush=True)
                             spoke = True
-                        print(sentence, end=" ", flush=True)
-                        tts.speak(sentence)     # blocks until this sentence is spoken
+                        print(delta, end="", flush=True)
+                        yield delta
+
+                try:
+                    tts.speak_stream(_tee())   # blocks until the whole reply is spoken
                 finally:
                     mic.speaking.clear()
                 if spoke:

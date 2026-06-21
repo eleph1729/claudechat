@@ -18,8 +18,8 @@ Each stage is its own small module so you can improve them independently:
 | `panelbot/stt.py` | Local speech-to-text (faster-whisper) | Streaming/partial transcripts |
 | `panelbot/prosody.py` | Pitch/energy cues from each utterance | Richer features (speech rate, pause structure) |
 | `panelbot/decide.py` | "Should I speak now?" — fast LLM speak/wait/yield | Learned classifier; interruption/barge-in |
-| `panelbot/respond.py` | Generate the spoken reply (Claude), streamed sentence-by-sentence | Per-speaker memory, interruption awareness |
-| `panelbot/tts.py` | Speak via ElevenLabs (streaming), `say` fallback | Barge-in (cancel mid-sentence) |
+| `panelbot/respond.py` | Generate the spoken reply (Claude), streamed as raw text deltas | Per-speaker memory, interruption awareness |
+| `panelbot/tts.py` | Speak via ElevenLabs websocket streaming (`say` fallback) | Barge-in (cancel mid-utterance) |
 | `panelbot/main.py` | The loop tying it together | |
 | `config.py` | All the knobs (thresholds, model, voice) | |
 
@@ -70,17 +70,26 @@ This is the honest hard part of "human-like, not turn-based." Natural next steps
 a learned classifier trained on labeled turn boundaries, richer prosodic features
 (speech rate, pause structure), and true barge-in so it can be interrupted.
 
-## Why the reply is streamed, sentence by sentence
+## Why the reply is streamed end-to-end
 
 `respond.py` doesn't wait for Claude's full reply before saying anything — it
-streams the response and yields each sentence the moment it's complete, and
-`main.py` hands each sentence to `tts.speak()` as it arrives. This matters
-most on long, detailed answers: without it, the bot sits in silence for the
-entire generation time before saying a single word; with it, time-to-first-
-audio is roughly the time to generate one sentence, regardless of how long
-the full answer ends up being. ElevenLabs' `convert_as_stream` compounds this
-by streaming audio back as it's synthesized rather than waiting for a whole
-sentence's audio to render.
+streams raw text deltas as they're generated, and `main.py` feeds them
+straight into `tts.speak_stream()`. This matters most on long, detailed
+answers: without it, the bot sits in silence for the entire generation time
+before saying a single word; with it, time-to-first-audio is roughly the time
+to generate the first few words, regardless of how long the full answer ends
+up being.
+
+`tts.py` feeds those same raw deltas into ElevenLabs' websocket
+`stream-input` endpoint rather than batching them into sentences first. An
+earlier version called ElevenLabs once per sentence, which caused audible
+glitches at sentence boundaries — each call started a fresh synthesis
+context, so ElevenLabs couldn't carry prosody/pacing across the cut. The
+websocket endpoint keeps one continuous synthesis context for the whole
+utterance and streams PCM audio back as it's generated, which is the native
+fit for token-by-token LLM output. With no `ELEVENLABS_API_KEY` set, we fall
+back to macOS `say`, which still gets sentence-chunked since `say` has no
+streaming-input concept of its own.
 
 ## The echo problem (important for an external speaker + mic)
 
