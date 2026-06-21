@@ -65,13 +65,14 @@ MAX_TOKENS = 400             # panel replies should be short and spoken-friendly
 # running; the bot raises immediately at startup if it's unset.
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  # "Rachel"
-ELEVENLABS_MODEL = "eleven_turbo_v2_5"   # lowest-latency ElevenLabs model
+ELEVENLABS_MODEL = "eleven_multilingual_v2"   # expressive + works over the streaming websocket
 # How many characters ElevenLabs buffers before synthesizing each audio chunk.
-# Its default is [120, 160, 250, 290] — it waits for ~120 chars before the
-# FIRST audio comes back, which dominates time-to-first-speech. A small first
-# value flushes audio much sooner; the later (larger) values keep prosody
-# smooth once we're rolling. Min allowed is 50.
-ELEVENLABS_CHUNK_SCHEDULE = [50, 120, 200, 260]
+# Emotion/diction is planned over a phrase, so giving the model more text before
+# it commits to each chunk yields better intonation. We use ElevenLabs' own
+# default schedule rather than forcing a tiny first chunk — the small first
+# value (which we used to chase time-to-first-speech) makes the opening phrase
+# land flat because it's synthesized before the sentence's shape is known.
+ELEVENLABS_CHUNK_SCHEDULE = [120, 160, 250, 290]
 # Playback sample rate. ElevenLabs returns pcm_<rate>; we play it at the same
 # rate. 24000 is an exact 2x divisor of typical 48 kHz Mac hardware, so the
 # OS resamples cleanly — 16000 forced an awkward ratio that added crackle.
