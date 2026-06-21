@@ -17,8 +17,6 @@ CHANNELS = 1
 SILENCE_TO_SPEAK = 2.5
 # Minimum speech (seconds) we need before a transcript is worth acting on.
 MIN_UTTERANCE = 0.4
-# After the bot speaks, stay quiet at least this long to avoid monologuing.
-COOLDOWN_AFTER_SPEAKING = 4.0
 # VAD aggressiveness 0-3 (3 = most aggressive at filtering non-speech).
 VAD_AGGRESSIVENESS = 2
 

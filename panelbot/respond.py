@@ -14,12 +14,18 @@ SYSTEM = f"""You are {config.BOT_NAME}, a participant in {config.PANEL_TOPIC} \
 alongside one or more humans. You hear a live transcript of the room.
 
 Speak like a thoughtful panelist, not an assistant:
-- Be brief. One or two sentences, occasionally three. This will be spoken aloud.
+- By default, be brief: one or two sentences, occasionally three. This will be \
+spoken aloud.
 - Be conversational and natural. No lists, no markdown, no stage directions.
 - Add a point, build on what was said, or answer the question — don't summarize \
 the discussion back to people.
 - If you were addressed by name, respond to that directly.
 - It's fine to be light or to disagree. Don't hedge excessively.
+
+If anyone has given you an explicit instruction about how you should respond \
+(e.g. "give me a one word answer", "answer in French", "keep it under 10 \
+seconds"), follow it even if it overrides the defaults above — treat it as a \
+standing instruction until they say otherwise.
 
 You only speak when handed the floor, so make it count, then stop."""
 
@@ -43,14 +49,15 @@ class Responder:
         """Recent transcript as plain text (for the turn-taking decision)."""
         return self._recent(n)
 
-    def reply(self, reason: str) -> str:
-        """Ask Claude for the next spoken line. `reason` is a Decision.* value."""
-        nudge = {
-            "addressed": "You were just addressed. Respond directly.",
-            "volunteer": "You judged this a good moment to jump in. Make a brief, "
-                         "useful contribution — don't summarize what was said.",
-            "lull": "The room has gone quiet. Offer a brief, useful contribution.",
-        }.get(reason, "Respond if you have something worth saying.")
+    def reply(self, reason: str = "") -> str:
+        """Ask Claude for the next spoken line.
+
+        `reason` is the turn-taking model's free-text reason for speaking now
+        (e.g. "addressed by name", "falling intonation + real lull") — passed
+        through as a hint, not a fixed category.
+        """
+        nudge = f"You judged this a good moment to speak ({reason})." if reason \
+            else "Respond if you have something worth saying."
 
         prompt = f"Here is the recent conversation:\n\n{self._recent()}\n\n{nudge}"
 

@@ -37,16 +37,19 @@ microphone are built into macOS; grant terminal mic permission when prompted.
 
 ## How it decides to speak
 
-`decide.py` is a hybrid of cheap rules and a fast LLM judgment:
+`decide.py` has no hardcoded behavioral rules — no automatic "always answer if
+addressed", no fixed cooldown timer. On a fresh remark, or the moment a real
+lull opens up, a small fast model (`DECIDE_MODEL`, Haiku by default) weighs the
+transcript, **prosody**, **timing**, and how recently the bot last spoke, and
+returns `speak` / `wait` / `yield`. Only `speak` takes the floor.
 
-- **Addressed** (rule) — someone says "Claude" (the `BOT_NAME`). Answers
-  promptly, even during cooldown.
-- **Cooldown** (rule) — for `COOLDOWN_AFTER_SPEAKING` seconds after it talks, it
-  stays quiet so it doesn't monologue.
-- **Volunteer** (AI) — on a fresh remark, or the moment a real lull opens up, a
-  small fast model (`DECIDE_MODEL`, Haiku by default) weighs the transcript plus
-  **prosody** and **timing** and returns `speak` / `wait` / `yield`. Only `speak`
-  takes the floor.
+Because the model reasons over the live transcript rather than fixed code
+paths, it can pick up on ad-hoc instructions a human gives it mid-conversation
+— "Claude, don't say anything until I say the word potato" or "give me a one
+word answer" — without those cases being special-cased anywhere. The only
+hardcoded logic left is a cost/latency gate (only bother calling the model
+once per utterance or once per opened lull, not every loop tick) — that's an
+efficiency knob, not a behavioral rule.
 
 The prosody (`prosody.py`) is the key new signal. From each utterance's audio we
 extract cheap cues — final pitch trend (rising = a question/invitation, falling =

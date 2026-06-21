@@ -50,8 +50,8 @@ def main():
                                     mic.seconds_since_voice,
                                     responder.transcript_text())
 
-            if decision != Decision.STAY_SILENT:
-                reply = responder.reply(decision)
+            if decision == Decision.SPEAK:
+                reply = responder.reply(turns.last_note)
                 if reply:
                     print(f"{config.BOT_NAME}: {reply}\n")
                     mic.speaking.set()          # mute input while we talk
