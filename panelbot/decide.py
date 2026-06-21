@@ -50,6 +50,13 @@ toward letting others talk unless directly addressed or there's a good reason.
 - Falling intonation + trailing-off energy + a real silence favors "speak"; \
 rising intonation or steady energy favors "wait"/"yield". Being addressed by \
 name is a strong (not absolute) reason to speak.
+- Be eager to fill a natural gap. A comfortable pause after a finished thought \
+(a few seconds of silence) is a genuine opening — lean toward "speak" and \
+contribute rather than letting the conversation stall.
+- BUT a very long silence (roughly {config.LONG_SILENCE:.0f}s or more) usually \
+means the panel is busy with something else — thinking, reading, working \
+off-mic — not waiting for you. Don't break a long silence out of nowhere; \
+prefer "wait" and let them resume in their own time.
 
 You are given the recent transcript, the latest thing said, prosodic cues \
 about how it was said, how long the room has been silent, and how recently \
@@ -102,9 +109,9 @@ class SpeakClassifier:
 class TurnTaker:
     def __init__(self):
         self._last_spoke_at: Optional[float] = None
-        # Re-armed by each new utterance, consumed once per lull, so we make at
-        # most one decision per thing said (keeps the loop cheap).
-        self._lull_pending = False
+        # When we last deliberated about volunteering into ongoing silence —
+        # throttles lull re-checks to LULL_RECHECK_INTERVAL instead of every tick.
+        self._last_lull_decision_at = 0.0
         self.last_note = ""        # human-readable trace of the last decision
         self.classifier: Optional[SpeakClassifier] = None
         if config.USE_AI_DECISION:
@@ -124,18 +131,34 @@ class TurnTaker:
     def decide(self, latest_text: str, prosody: Optional[Prosody],
                seconds_since_voice: float, transcript: str = "") -> str:
         """Return one of Decision.* for the current moment."""
+        now = time.monotonic()
         new_utterance = bool(latest_text)
         if new_utterance:
-            self._lull_pending = True
-        lull = seconds_since_voice >= config.SILENCE_TO_SPEAK
+            # Fresh content re-arms volunteering immediately.
+            self._last_lull_decision_at = 0.0
 
-        # Only deliberate on a fresh remark or the moment a real lull opens up —
-        # not on every 0.1s tick. This is a cost/latency gate, not a rule about
-        # whether the bot is "allowed" to speak.
-        trigger = new_utterance or (lull and self._lull_pending)
+        # Volunteer into a gap only while a human was the most recent speaker —
+        # if the bot itself spoke last, a following silence isn't an opening,
+        # it's just nobody having replied yet (don't monologue).
+        since_bot = self._seconds_since_bot_spoke()
+        human_spoke_last = since_bot is None or since_bot > seconds_since_voice
+
+        # Re-deliberate through the gap, but only within a bounded window:
+        # from SILENCE_TO_SPEAK (eager start) up to LONG_SILENCE (past which a
+        # long pause means the panel is busy — wait for them to resume).
+        in_lull_window = (config.SILENCE_TO_SPEAK <= seconds_since_voice
+                          <= config.LONG_SILENCE)
+        lull_recheck = (in_lull_window and human_spoke_last and
+                        (now - self._last_lull_decision_at) >= config.LULL_RECHECK_INTERVAL)
+
+        # Deliberate on a fresh remark or a (throttled) lull re-check — not on
+        # every 0.1s tick. This is a cost/latency gate, not a rule about whether
+        # the bot is "allowed" to speak.
+        trigger = new_utterance or lull_recheck
         if not trigger or not transcript:
             return Decision.STAY_SILENT
-        self._lull_pending = False
+        if not new_utterance:
+            self._last_lull_decision_at = now
 
         if self.classifier:
             try:
@@ -150,8 +173,9 @@ class TurnTaker:
                 # Don't let a transient API hiccup kill the live loop.
                 print(f"  [decide] AI call failed ({e}); falling back to rule.")
 
-        # Fallback rule (offline / API down): volunteer into a genuine lull.
-        if lull and latest_text:
+        # Fallback rule (offline / API down): volunteer into a genuine lull,
+        # within the same bounded window the AI path uses.
+        if in_lull_window and human_spoke_last:
             self.last_note = "lull (rule)"
             return Decision.SPEAK
         return Decision.STAY_SILENT

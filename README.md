@@ -50,8 +50,18 @@ paths, it can pick up on ad-hoc instructions a human gives it mid-conversation
 — "Claude, don't say anything until I say the word potato" or "give me a one
 word answer" — without those cases being special-cased anywhere. The only
 hardcoded logic left is a cost/latency gate (only bother calling the model
-once per utterance or once per opened lull, not every loop tick) — that's an
-efficiency knob, not a behavioral rule.
+once per utterance or on a throttled re-check while silence continues, not
+every loop tick) — that's an efficiency knob, not a behavioral rule.
+
+**Gaps.** The bot is eager to fill a natural pause: once silence passes
+`SILENCE_TO_SPEAK` it considers jumping in, and keeps re-considering every
+`LULL_RECHECK_INTERVAL` so it can take a gap that opens a moment later — but
+only while a *human* spoke last (if the bot spoke last, a following silence is
+just nobody having replied yet, not an opening, so it won't monologue). Past
+`LONG_SILENCE` it stops volunteering entirely: a very long pause usually means
+the panel is busy with something off-mic, so it waits for them to resume
+rather than break the silence. The model is also told this nuance directly, so
+its judgment and the timing gate agree.
 
 The prosody (`prosody.py`) is the key new signal. From each utterance's audio we
 extract cheap cues — final pitch trend (rising = a question/invitation, falling =

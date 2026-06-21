@@ -16,7 +16,17 @@ CHANNELS = 1
 
 # --- Turn-taking ------------------------------------------------------------
 # How long the room must be silent before the bot considers volunteering.
-SILENCE_TO_SPEAK = 2.5
+# Lower = more eager to jump into a natural gap.
+SILENCE_TO_SPEAK = 1.5
+# While silence continues (and a human spoke last), re-evaluate whether to
+# jump in this often. Lets the bot take a gap that opens up a moment later,
+# not only at the instant silence crosses SILENCE_TO_SPEAK.
+LULL_RECHECK_INTERVAL = 2.5
+# Past this much continuous silence, stop volunteering into the gap — a very
+# long pause usually means the panel is busy with something off-mic, so wait
+# for them to resume (a new utterance re-arms volunteering) rather than break
+# a long silence out of nowhere.
+LONG_SILENCE = 12.0
 # Minimum speech (seconds) we need before a transcript is worth acting on.
 MIN_UTTERANCE = 0.4
 # VAD aggressiveness 0-3 (3 = most aggressive at filtering non-speech).
