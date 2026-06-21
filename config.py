@@ -79,6 +79,6 @@ TTS_SAMPLE_RATE = 24000
 # Seconds of audio to buffer before starting playback. A larger lead lets the
 # jitter buffer ride over gaps between ElevenLabs chunks without underrunning
 # (heard as crackle/clicks). Larger = smoother but slightly later first speech.
-TTS_PRIME_SECONDS = 0.35
+TTS_PRIME_SECONDS = 1.0
 # Print time-to-first-audio for each reply so latency is visible.
 TTS_TIMING = True
