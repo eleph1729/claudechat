@@ -22,6 +22,25 @@ COOLDOWN_AFTER_SPEAKING = 4.0
 # VAD aggressiveness 0-3 (3 = most aggressive at filtering non-speech).
 VAD_AGGRESSIVENESS = 2
 
+# --- AI turn-taking (decide.py) ---------------------------------------------
+# When True, a fast model weighs timing + prosody + transcript to choose
+# speak/wait/yield. When False (or on any API error) we fall back to the
+# simple silence rule. This call runs in the live loop, so it uses a small,
+# low-latency model; the spoken reply still uses MODEL below.
+USE_AI_DECISION = True
+DECIDE_MODEL = "claude-haiku-4-5"   # fast = can react in time to take a turn
+DECIDE_MAX_TOKENS = 150
+
+# --- Prosody (prosody.py) ---------------------------------------------------
+# Pitch-tracking search range (human speech f0 lives roughly here).
+PITCH_MIN_HZ = 75
+PITCH_MAX_HZ = 400
+# Seconds at the END of an utterance used to judge intonation/trailing energy.
+# The end of a turn carries most of the "am I done?" signal.
+ENDING_WINDOW = 0.6
+# How steep (Hz/sec) the final pitch trend must be to call it rising/falling.
+PITCH_SLOPE_THRESHOLD = 15.0
+
 # --- STT --------------------------------------------------------------------
 WHISPER_MODEL = "base.en"    # base.en is a good latency/quality start on M-series
 WHISPER_DEVICE = "auto"      # "auto" | "cpu" | "cuda"

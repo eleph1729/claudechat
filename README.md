@@ -16,7 +16,8 @@ Each stage is its own small module so you can improve them independently:
 | --- | --- | --- |
 | `panelbot/audio.py` | Mic capture + voice-activity detection | Real acoustic echo cancellation (see below) |
 | `panelbot/stt.py` | Local speech-to-text (faster-whisper) | Streaming/partial transcripts |
-| `panelbot/decide.py` | "Should I speak now?" rules | Learned classifier or fast LLM speak/wait/yield |
+| `panelbot/prosody.py` | Pitch/energy cues from each utterance | Richer features (speech rate, pause structure) |
+| `panelbot/decide.py` | "Should I speak now?" — rules + fast LLM speak/wait/yield | Learned classifier; interruption/barge-in |
 | `panelbot/respond.py` | Generate the spoken reply (Claude) | Per-speaker memory, interruption awareness |
 | `panelbot/tts.py` | Speak via macOS `say` | Streaming TTS (ElevenLabs/Piper) with barge-in |
 | `panelbot/main.py` | The loop tying it together | |
@@ -34,22 +35,35 @@ python -m panelbot.main
 First run downloads the Whisper model (`base.en`, ~150 MB). `say` and the
 microphone are built into macOS; grant terminal mic permission when prompted.
 
-## How it decides to speak (v1)
+## How it decides to speak
 
-Two triggers, both in `decide.py`:
+`decide.py` is a hybrid of cheap rules and a fast LLM judgment:
 
-- **Addressed** — someone says "Claude" (the `BOT_NAME`). Answers promptly, even
-  during cooldown.
-- **Lull** — the room is quiet for `SILENCE_TO_SPEAK` seconds and there's
-  something on the table. The bot volunteers a brief contribution.
+- **Addressed** (rule) — someone says "Claude" (the `BOT_NAME`). Answers
+  promptly, even during cooldown.
+- **Cooldown** (rule) — for `COOLDOWN_AFTER_SPEAKING` seconds after it talks, it
+  stays quiet so it doesn't monologue.
+- **Volunteer** (AI) — on a fresh remark, or the moment a real lull opens up, a
+  small fast model (`DECIDE_MODEL`, Haiku by default) weighs the transcript plus
+  **prosody** and **timing** and returns `speak` / `wait` / `yield`. Only `speak`
+  takes the floor.
 
-After speaking it stays quiet for `COOLDOWN_AFTER_SPEAKING` seconds so it doesn't
-monologue. Everything else → silence. Tune all of this in `config.py`.
+The prosody (`prosody.py`) is the key new signal. From each utterance's audio we
+extract cheap cues — final pitch trend (rising = a question/invitation, falling =
+a settled thought), trailing energy (winding down vs. ending strong), and
+duration — and describe them in words for the model. Falling intonation + energy
+trailing off + a genuine silence pushes toward `speak`; rising or steady delivery
+pushes toward `wait`/`yield`.
 
-This is intentionally simple so you can watch it and feel where it's wrong. The
-honest hard part of "human-like, not turn-based" lives here — the natural next
-step is to feed timing + prosody (pitch, pause length) into a fast classifier or
-a Haiku-speed LLM call that outputs speak / wait / yield.
+The decision runs at most about once per utterance (not every loop tick), uses a
+small model for low latency, and prints its call as `[decide] speak: ...` so you
+can watch it and feel where it's wrong. Set `USE_AI_DECISION = False` in
+`config.py` to fall back to the pure silence rule (also the automatic fallback if
+the API call errors). Tune thresholds and the model in `config.py`.
+
+This is the honest hard part of "human-like, not turn-based." Natural next steps:
+a learned classifier trained on labeled turn boundaries, richer prosodic features
+(speech rate, pause structure), and true barge-in so it can be interrupted.
 
 ## The echo problem (important for an external speaker + mic)
 

@@ -39,10 +39,16 @@ class Responder:
     def _recent(self, n: int = 30) -> str:
         return "\n".join(self.transcript[-n:])
 
+    def transcript_text(self, n: int = 30) -> str:
+        """Recent transcript as plain text (for the turn-taking decision)."""
+        return self._recent(n)
+
     def reply(self, reason: str) -> str:
         """Ask Claude for the next spoken line. `reason` is a Decision.* value."""
         nudge = {
             "addressed": "You were just addressed. Respond directly.",
+            "volunteer": "You judged this a good moment to jump in. Make a brief, "
+                         "useful contribution — don't summarize what was said.",
             "lull": "The room has gone quiet. Offer a brief, useful contribution.",
         }.get(reason, "Respond if you have something worth saying.")
 

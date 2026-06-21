@@ -10,7 +10,7 @@ import queue
 import time
 
 import config
-from panelbot import tts
+from panelbot import prosody, tts
 from panelbot.audio import Microphone
 from panelbot.decide import Decision, TurnTaker
 from panelbot.respond import Responder
@@ -33,6 +33,7 @@ def main():
         while True:
             # Drain any completed utterances and transcribe them.
             latest = ""
+            latest_prosody = None
             try:
                 while True:
                     pcm = mic.utterances.get_nowait()
@@ -41,10 +42,13 @@ def main():
                         print(f"  heard: {text}")
                         responder.add_heard(text)
                         latest = text
+                        latest_prosody = prosody.extract(pcm)
             except queue.Empty:
                 pass
 
-            decision = turns.decide(latest, mic.seconds_since_voice)
+            decision = turns.decide(latest, latest_prosody,
+                                    mic.seconds_since_voice,
+                                    responder.transcript_text())
 
             if decision != Decision.STAY_SILENT:
                 reply = responder.reply(decision)
