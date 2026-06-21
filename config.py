@@ -56,3 +56,11 @@ MAX_TOKENS = 400             # panel replies should be short and spoken-friendly
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  # "Rachel"
 ELEVENLABS_MODEL = "eleven_turbo_v2_5"   # lowest-latency ElevenLabs model
+# How many characters ElevenLabs buffers before synthesizing each audio chunk.
+# Its default is [120, 160, 250, 290] — it waits for ~120 chars before the
+# FIRST audio comes back, which dominates time-to-first-speech. A small first
+# value flushes audio much sooner; the later (larger) values keep prosody
+# smooth once we're rolling. Min allowed is 50.
+ELEVENLABS_CHUNK_SCHEDULE = [50, 120, 200, 260]
+# Print time-to-first-audio for each reply so latency is visible.
+TTS_TIMING = True

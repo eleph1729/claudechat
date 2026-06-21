@@ -19,6 +19,7 @@ different voice/engine.
 import asyncio
 import base64
 import json
+import time
 from typing import Iterable
 
 import sounddevice as sd
@@ -40,6 +41,7 @@ def _require_api_key():
 
 
 async def _elevenlabs_stream(text_chunks: Iterable[str]):
+    start = time.monotonic()
     uri = (f"wss://api.elevenlabs.io/v1/text-to-speech/{config.ELEVENLABS_VOICE_ID}"
            f"/stream-input?model_id={config.ELEVENLABS_MODEL}&output_format=pcm_16000")
 
@@ -65,6 +67,12 @@ async def _elevenlabs_stream(text_chunks: Iterable[str]):
             await ws.send(json.dumps({
                 "text": " ",
                 "voice_settings": {"stability": 0.5, "similarity_boost": 0.8},
+                # Flush the first audio chunk after a small amount of text
+                # instead of ElevenLabs' ~120-char default — this is the main
+                # lever on time-to-first-speech.
+                "generation_config": {
+                    "chunk_length_schedule": config.ELEVENLABS_CHUNK_SCHEDULE,
+                },
             }))
 
             async def sender():
@@ -78,11 +86,17 @@ async def _elevenlabs_stream(text_chunks: Iterable[str]):
             async def receiver():
                 stream = sd.RawOutputStream(samplerate=16000, channels=1, dtype="int16")
                 stream.start()
+                first_audio = True
                 try:
                     async for message in ws:
                         data = json.loads(message)
                         audio_b64 = data.get("audio")
                         if audio_b64:
+                            if first_audio:
+                                first_audio = False
+                                if config.TTS_TIMING:
+                                    print(f"  [tts] first audio in "
+                                          f"{time.monotonic() - start:.2f}s")
                             stream.write(base64.b64decode(audio_b64))
                         if data.get("isFinal"):
                             break
