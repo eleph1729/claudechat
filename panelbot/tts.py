@@ -19,6 +19,7 @@ different voice/engine.
 import asyncio
 import base64
 import json
+import threading
 import time
 from typing import Iterable
 
@@ -84,8 +85,28 @@ async def _elevenlabs_stream(text_chunks: Iterable[str]):
                     await ws.send(json.dumps({"text": chunk}))
 
             async def receiver():
-                stream = sd.RawOutputStream(samplerate=16000, channels=1, dtype="int16")
-                stream.start()
+                # Jitter buffer: incoming PCM is appended to `buf`, and a
+                # PortAudio callback thread drains it for playback. This
+                # decouples network arrival from playback rate — without it,
+                # a blocking write() runs the audio device dry between chunks
+                # (an underrun heard as a click/glitch at chunk boundaries).
+                buf = bytearray()
+                lock = threading.Lock()
+                bytes_per_frame = 2  # int16 mono
+                prime_bytes = int(config.TTS_PRIME_SECONDS * 16000) * bytes_per_frame
+
+                def callback(outdata, frames, time_info, status):
+                    need = frames * bytes_per_frame
+                    with lock:
+                        have = min(need, len(buf))
+                        outdata[:have] = buf[:have]
+                        del buf[:have]
+                    if have < need:        # underrun -> brief silence, not a click
+                        outdata[have:] = b"\x00" * (need - have)
+
+                stream = sd.RawOutputStream(samplerate=16000, channels=1,
+                                            dtype="int16", callback=callback)
+                started = False
                 first_audio = True
                 try:
                     async for message in ws:
@@ -97,9 +118,28 @@ async def _elevenlabs_stream(text_chunks: Iterable[str]):
                                 if config.TTS_TIMING:
                                     print(f"  [tts] first audio in "
                                           f"{time.monotonic() - start:.2f}s")
-                            stream.write(base64.b64decode(audio_b64))
+                            with lock:
+                                buf.extend(base64.b64decode(audio_b64))
+                                buffered = len(buf)
+                            # Prime a small lead before playback so the first
+                            # inter-chunk gap doesn't immediately underrun.
+                            if not started and buffered >= prime_bytes:
+                                stream.start()
+                                started = True
                         if data.get("isFinal"):
                             break
+
+                    if not started:        # short reply: never hit prime threshold
+                        stream.start()
+                        started = True
+                    # Let the buffer drain fully before tearing down, or the
+                    # tail of the reply gets cut off.
+                    while True:
+                        with lock:
+                            remaining = len(buf)
+                        if remaining == 0:
+                            break
+                        await asyncio.sleep(0.05)
                 finally:
                     stream.stop()
                     stream.close()

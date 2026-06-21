@@ -62,5 +62,10 @@ ELEVENLABS_MODEL = "eleven_turbo_v2_5"   # lowest-latency ElevenLabs model
 # value flushes audio much sooner; the later (larger) values keep prosody
 # smooth once we're rolling. Min allowed is 50.
 ELEVENLABS_CHUNK_SCHEDULE = [50, 120, 200, 260]
+# Seconds of audio to buffer before starting playback. A small lead lets the
+# jitter buffer ride over gaps between ElevenLabs chunks without underrunning
+# (which is heard as a click/glitch). Larger = smoother but slightly later
+# first speech.
+TTS_PRIME_SECONDS = 0.15
 # Print time-to-first-audio for each reply so latency is visible.
 TTS_TIMING = True
