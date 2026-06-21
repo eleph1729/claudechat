@@ -1,6 +1,6 @@
 """Main loop: listen continuously, decide when to speak, speak.
 
-    mic ── utterances ──> STT ──> transcript ──> decide ──> Claude ──> say
+    mic ── utterances ──> STT ──> transcript ──> decide ──> Claude (streamed) ──> TTS
 
 Run with:  python -m panelbot.main
 Stop with: Ctrl-C
@@ -51,14 +51,19 @@ def main():
                                     responder.transcript_text())
 
             if decision == Decision.SPEAK:
-                reply = responder.reply(turns.last_note)
-                if reply:
-                    print(f"{config.BOT_NAME}: {reply}\n")
-                    mic.speaking.set()          # mute input while we talk
-                    try:
-                        tts.speak(reply)
-                    finally:
-                        mic.speaking.clear()
+                mic.speaking.set()          # mute input while we talk
+                spoke = False
+                try:
+                    for sentence in responder.reply_stream(turns.last_note):
+                        if not spoke:
+                            print(f"{config.BOT_NAME}: ", end="", flush=True)
+                            spoke = True
+                        print(sentence, end=" ", flush=True)
+                        tts.speak(sentence)     # blocks until this sentence is spoken
+                finally:
+                    mic.speaking.clear()
+                if spoke:
+                    print("\n")
                     turns.note_bot_spoke()
 
             time.sleep(0.1)

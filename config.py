@@ -3,6 +3,8 @@
 Tweak these while iterating. Times are in seconds unless noted.
 """
 
+import os
+
 # --- Identity ---------------------------------------------------------------
 BOT_NAME = "Claude"          # what humans call the bot to address it directly
 PANEL_TOPIC = "an open panel discussion"
@@ -49,6 +51,14 @@ MODEL = "claude-opus-4-8"
 MAX_TOKENS = 400             # panel replies should be short and spoken-friendly
 
 # --- TTS --------------------------------------------------------------------
-# macOS `say` voice. Run `say -v '?'` to list. None = system default.
+# ElevenLabs is used when ELEVENLABS_API_KEY is set (export it in your shell);
+# otherwise we fall back to macOS `say`. ElevenLabs streams audio back as it's
+# synthesized, so pairing it with the sentence-streamed reply (respond.py)
+# gets audio out the door as fast as possible, even on long answers.
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
+ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  # "Rachel"
+ELEVENLABS_MODEL = "eleven_turbo_v2_5"   # lowest-latency ElevenLabs model
+
+# macOS `say` voice (fallback only). Run `say -v '?'` to list. None = system default.
 TTS_VOICE = None
 TTS_RATE_WPM = 180

@@ -4,11 +4,20 @@ Keeps a running transcript of the conversation and asks Claude for a short,
 conversational reply suitable for being spoken aloud on a panel. The transcript
 is sent as a single user turn each time; the system prompt carries the persona
 and the "keep it brief / spoken" constraints.
+
+The reply is streamed and cut into sentences as they complete, so the caller
+can start speaking the first sentence while later ones are still being
+generated — this matters most on long replies, where waiting for the full
+response would otherwise mean a long silence before anything is said.
 """
+
+import re
 
 import anthropic
 
 import config
+
+_SENTENCE_END = re.compile(r"[.!?]+(?=\s|$)")
 
 SYSTEM = f"""You are {config.BOT_NAME}, a participant in {config.PANEL_TOPIC} \
 alongside one or more humans. You hear a live transcript of the room.
@@ -49,8 +58,8 @@ class Responder:
         """Recent transcript as plain text (for the turn-taking decision)."""
         return self._recent(n)
 
-    def reply(self, reason: str = "") -> str:
-        """Ask Claude for the next spoken line.
+    def reply_stream(self, reason: str = ""):
+        """Stream the next spoken line, yielding complete sentences as they arrive.
 
         `reason` is the turn-taking model's free-text reason for speaking now
         (e.g. "addressed by name", "falling intonation + real lull") — passed
@@ -61,13 +70,29 @@ class Responder:
 
         prompt = f"Here is the recent conversation:\n\n{self._recent()}\n\n{nudge}"
 
-        message = self.client.messages.create(
+        buffer = ""
+        parts: list[str] = []
+        with self.client.messages.stream(
             model=config.MODEL,
             max_tokens=config.MAX_TOKENS,
             system=SYSTEM,
             messages=[{"role": "user", "content": prompt}],
-        )
-        text = next((b.text for b in message.content if b.type == "text"), "").strip()
-        if text:
-            self.add_self(text)
-        return text
+        ) as stream:
+            for delta in stream.text_stream:
+                buffer += delta
+                parts.append(delta)
+                while True:
+                    m = _SENTENCE_END.search(buffer)
+                    if not m:
+                        break
+                    sentence, buffer = buffer[:m.end()].strip(), buffer[m.end():]
+                    if sentence:
+                        yield sentence
+
+        tail = buffer.strip()
+        if tail:
+            yield tail
+
+        full_text = "".join(parts).strip()
+        if full_text:
+            self.add_self(full_text)
