@@ -1,27 +1,24 @@
-"""Text-to-speech via ElevenLabs, with macOS `say` as a no-key fallback.
+"""Text-to-speech via ElevenLabs only.
 
 `speak_stream()` is the main entry point: it takes an iterator of raw text
 chunks (as they stream out of Claude — see `respond.py`) and feeds them
 straight into ElevenLabs' websocket `stream-input` endpoint as they arrive,
-playing back the synthesized audio as it streams back. There's no per-call
-boundary the way there was with calling `convert_as_stream` once per
-sentence — ElevenLabs keeps a single synthesis context for the whole
-utterance, which is what was causing small glitches/resets at sentence
-boundaries. The model itself decides how to chunk audio internally; we just
-keep handing it text.
+playing back the synthesized audio as it streams back. ElevenLabs keeps a
+single synthesis context for the whole utterance this way, instead of
+resetting context on every call (which is what happens — and causes audible
+glitches — if you instead call a non-streaming endpoint once per sentence).
 
 Audio comes back as raw 16-bit PCM (`output_format=pcm_16000`) so it can be
 written straight to a `sounddevice` output stream with no decoding step.
 
-If `ELEVENLABS_API_KEY` isn't set, we fall back to macOS `say`, sentence by
-sentence (the websocket protocol is ElevenLabs-specific).
+There is no fallback TTS engine: if `ELEVENLABS_API_KEY` isn't set, or the
+websocket call fails, this raises rather than silently degrading to a
+different voice/engine.
 """
 
 import asyncio
 import base64
 import json
-import re
-import subprocess
 from typing import Iterable
 
 import sounddevice as sd
@@ -29,32 +26,17 @@ import websockets
 
 import config
 
-_SENTENCE_END = re.compile(r"[.!?]+(?=\s|$)")
+
+class TTSError(RuntimeError):
+    """Raised when ElevenLabs TTS is unavailable or a call to it fails."""
 
 
-def _speak_say(text: str):
-    cmd = ["say", "-r", str(config.TTS_RATE_WPM)]
-    if config.TTS_VOICE:
-        cmd += ["-v", config.TTS_VOICE]
-    cmd.append(text)
-    subprocess.run(cmd, check=False)
-
-
-def _speak_say_stream(text_chunks: Iterable[str]):
-    """Fallback path: group raw chunks into sentences and speak each via `say`."""
-    buffer = ""
-    for chunk in text_chunks:
-        buffer += chunk
-        while True:
-            m = _SENTENCE_END.search(buffer)
-            if not m:
-                break
-            sentence, buffer = buffer[:m.end()].strip(), buffer[m.end():]
-            if sentence:
-                _speak_say(sentence)
-    tail = buffer.strip()
-    if tail:
-        _speak_say(tail)
+def _require_api_key():
+    if not config.ELEVENLABS_API_KEY:
+        raise TTSError(
+            "ELEVENLABS_API_KEY is not set. This bot requires ElevenLabs for "
+            "TTS — export ELEVENLABS_API_KEY before running."
+        )
 
 
 async def _elevenlabs_stream(text_chunks: Iterable[str]):
@@ -120,22 +102,23 @@ async def _elevenlabs_stream(text_chunks: Iterable[str]):
         await feed_future
 
 
-def speak_stream(text_chunks: Iterable[str]):
-    """Speak a live stream of text chunks as they arrive.
+def ensure_configured():
+    """Raise TTSError now if ElevenLabs isn't configured, instead of waiting
+    for the first reply to fail."""
+    _require_api_key()
 
-    Preferred path: feed them straight into ElevenLabs' websocket endpoint so
-    there's a single synthesis context for the whole reply. Falls back to
-    `say`, sentence by sentence, if no API key is configured or the websocket
-    call fails outright.
+
+def speak_stream(text_chunks: Iterable[str]):
+    """Speak a live stream of text chunks as they arrive via ElevenLabs.
+
+    Raises TTSError if ElevenLabs isn't configured or the call fails — there
+    is no fallback engine.
     """
-    if not config.ELEVENLABS_API_KEY:
-        _speak_say_stream(text_chunks)
-        return
+    _require_api_key()
     try:
         asyncio.run(_elevenlabs_stream(text_chunks))
     except Exception as e:
-        print(f"  [tts] ElevenLabs streaming failed ({e}); reply already spoken/lost "
-              f"for this turn.")
+        raise TTSError(f"ElevenLabs streaming TTS failed: {e}") from e
 
 
 def speak(text: str):

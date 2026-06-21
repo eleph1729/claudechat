@@ -51,14 +51,8 @@ MODEL = "claude-opus-4-8"
 MAX_TOKENS = 400             # panel replies should be short and spoken-friendly
 
 # --- TTS --------------------------------------------------------------------
-# ElevenLabs is used when ELEVENLABS_API_KEY is set (export it in your shell);
-# otherwise we fall back to macOS `say`. ElevenLabs streams audio back as it's
-# synthesized, so pairing it with the sentence-streamed reply (respond.py)
-# gets audio out the door as fast as possible, even on long answers.
+# ElevenLabs only — no fallback engine. Export ELEVENLABS_API_KEY before
+# running; the bot raises immediately at startup if it's unset.
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  # "Rachel"
 ELEVENLABS_MODEL = "eleven_turbo_v2_5"   # lowest-latency ElevenLabs model
-
-# macOS `say` voice (fallback only). Run `say -v '?'` to list. None = system default.
-TTS_VOICE = None
-TTS_RATE_WPM = 180

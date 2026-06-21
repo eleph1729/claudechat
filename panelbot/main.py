@@ -18,6 +18,7 @@ from panelbot.stt import Transcriber
 
 
 def main():
+    tts.ensure_configured()    # fail fast and clearly if ElevenLabs isn't set up
     print("Loading speech-to-text model...")
     stt = Transcriber()
     responder = Responder()

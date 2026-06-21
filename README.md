@@ -7,7 +7,7 @@ MacBook Pro with audio in/out from the Mac.
 ## Pipeline
 
 ```
-mic ──VAD──> utterances ──> Whisper STT ──> transcript ──> turn-taking ──> Claude (streamed) ──> TTS (ElevenLabs / `say`)
+mic ──VAD──> utterances ──> Whisper STT ──> transcript ──> turn-taking ──> Claude (streamed) ──> TTS (ElevenLabs)
 ```
 
 Each stage is its own small module so you can improve them independently:
@@ -19,7 +19,7 @@ Each stage is its own small module so you can improve them independently:
 | `panelbot/prosody.py` | Pitch/energy cues from each utterance | Richer features (speech rate, pause structure) |
 | `panelbot/decide.py` | "Should I speak now?" — fast LLM speak/wait/yield | Learned classifier; interruption/barge-in |
 | `panelbot/respond.py` | Generate the spoken reply (Claude), streamed as raw text deltas | Per-speaker memory, interruption awareness |
-| `panelbot/tts.py` | Speak via ElevenLabs websocket streaming (`say` fallback) | Barge-in (cancel mid-utterance) |
+| `panelbot/tts.py` | Speak via ElevenLabs websocket streaming (required, no fallback) | Barge-in (cancel mid-utterance) |
 | `panelbot/main.py` | The loop tying it together | |
 | `config.py` | All the knobs (thresholds, model, voice) | |
 
@@ -29,13 +29,13 @@ Each stage is its own small module so you can improve them independently:
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 export ANTHROPIC_API_KEY=sk-ant-...      # for the Claude reply step
-export ELEVENLABS_API_KEY=...            # optional: better voice + lower latency than `say`
+export ELEVENLABS_API_KEY=...            # required: TTS has no fallback engine
 python -m panelbot.main
 ```
 
 First run downloads the Whisper model (`base.en`, ~150 MB). The microphone is
-built into macOS; grant terminal mic permission when prompted. Without
-`ELEVENLABS_API_KEY` set, TTS falls back to macOS `say`.
+built into macOS; grant terminal mic permission when prompted. `ELEVENLABS_API_KEY`
+is required — the bot raises immediately at startup if it's unset.
 
 ## How it decides to speak
 
@@ -87,9 +87,9 @@ glitches at sentence boundaries — each call started a fresh synthesis
 context, so ElevenLabs couldn't carry prosody/pacing across the cut. The
 websocket endpoint keeps one continuous synthesis context for the whole
 utterance and streams PCM audio back as it's generated, which is the native
-fit for token-by-token LLM output. With no `ELEVENLABS_API_KEY` set, we fall
-back to macOS `say`, which still gets sentence-chunked since `say` has no
-streaming-input concept of its own.
+fit for token-by-token LLM output. There's no fallback engine — if
+`ELEVENLABS_API_KEY` is unset or a call fails, `tts.py` raises `TTSError`
+rather than silently degrading to a different voice/engine.
 
 ## The echo problem (important for an external speaker + mic)
 
@@ -110,8 +110,7 @@ Start with headphones to make progress, then add AEC before going hands-free.
 
 ## Notes
 
-- This was developed on Linux but targets macOS for the `say` fallback. With
-  `ELEVENLABS_API_KEY` set, `tts.py` works the same on Linux. Without it, swap
-  in `espeak`/`piper` for `_speak_say` to test the loop on Linux.
+- TTS is ElevenLabs-only and works the same on Linux and macOS — audio
+  playback goes through `sounddevice`, not a platform-specific command.
 - The Claude reply uses `claude-opus-4-8`; change `MODEL` in `config.py`. For
   lower latency you might try a faster model for the reply step.
