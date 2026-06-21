@@ -47,7 +47,7 @@ WHISPER_DEVICE = "auto"      # "auto" | "cpu" | "cuda"
 WHISPER_COMPUTE = "int8"     # int8 is fast on CPU; try "float16" on GPU
 
 # --- LLM --------------------------------------------------------------------
-MODEL = "claude-opus-4-8"
+MODEL = "claude-sonnet-4-6"  # faster time-to-first-token than Opus for low-latency speech
 MAX_TOKENS = 400             # panel replies should be short and spoken-friendly
 
 # --- TTS --------------------------------------------------------------------

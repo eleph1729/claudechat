@@ -112,5 +112,6 @@ Start with headphones to make progress, then add AEC before going hands-free.
 
 - TTS is ElevenLabs-only and works the same on Linux and macOS — audio
   playback goes through `sounddevice`, not a platform-specific command.
-- The Claude reply uses `claude-opus-4-8`; change `MODEL` in `config.py`. For
-  lower latency you might try a faster model for the reply step.
+- The Claude reply uses `claude-sonnet-4-6` for faster time-to-first-token
+  (lower latency to first speech); change `MODEL` in `config.py` to
+  `claude-opus-4-8` if you'd rather trade latency for richer replies.
