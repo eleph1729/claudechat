@@ -72,10 +72,13 @@ ELEVENLABS_MODEL = "eleven_turbo_v2_5"   # lowest-latency ElevenLabs model
 # value flushes audio much sooner; the later (larger) values keep prosody
 # smooth once we're rolling. Min allowed is 50.
 ELEVENLABS_CHUNK_SCHEDULE = [50, 120, 200, 260]
-# Seconds of audio to buffer before starting playback. A small lead lets the
+# Playback sample rate. ElevenLabs returns pcm_<rate>; we play it at the same
+# rate. 24000 is an exact 2x divisor of typical 48 kHz Mac hardware, so the
+# OS resamples cleanly — 16000 forced an awkward ratio that added crackle.
+TTS_SAMPLE_RATE = 24000
+# Seconds of audio to buffer before starting playback. A larger lead lets the
 # jitter buffer ride over gaps between ElevenLabs chunks without underrunning
-# (which is heard as a click/glitch). Larger = smoother but slightly later
-# first speech.
-TTS_PRIME_SECONDS = 0.15
+# (heard as crackle/clicks). Larger = smoother but slightly later first speech.
+TTS_PRIME_SECONDS = 0.35
 # Print time-to-first-audio for each reply so latency is visible.
 TTS_TIMING = True

@@ -43,8 +43,9 @@ def _require_api_key():
 
 async def _elevenlabs_stream(text_chunks: Iterable[str]):
     start = time.monotonic()
+    sr = config.TTS_SAMPLE_RATE
     uri = (f"wss://api.elevenlabs.io/v1/text-to-speech/{config.ELEVENLABS_VOICE_ID}"
-           f"/stream-input?model_id={config.ELEVENLABS_MODEL}&output_format=pcm_16000")
+           f"/stream-input?model_id={config.ELEVENLABS_MODEL}&output_format=pcm_{sr}")
 
     loop = asyncio.get_event_loop()
     queue: asyncio.Queue = asyncio.Queue()
@@ -93,7 +94,7 @@ async def _elevenlabs_stream(text_chunks: Iterable[str]):
                 buf = bytearray()
                 lock = threading.Lock()
                 bytes_per_frame = 2  # int16 mono
-                prime_bytes = int(config.TTS_PRIME_SECONDS * 16000) * bytes_per_frame
+                prime_bytes = int(config.TTS_PRIME_SECONDS * sr) * bytes_per_frame
 
                 def callback(outdata, frames, time_info, status):
                     need = frames * bytes_per_frame
@@ -104,8 +105,12 @@ async def _elevenlabs_stream(text_chunks: Iterable[str]):
                     if have < need:        # underrun -> brief silence, not a click
                         outdata[have:] = b"\x00" * (need - have)
 
-                stream = sd.RawOutputStream(samplerate=16000, channels=1,
-                                            dtype="int16", callback=callback)
+                # latency="high" gives CoreAudio a roomier device buffer, which
+                # together with the prime lead keeps the stream from starving
+                # (audible as crackle) under network jitter.
+                stream = sd.RawOutputStream(samplerate=sr, channels=1,
+                                            dtype="int16", latency="high",
+                                            callback=callback)
                 started = False
                 first_audio = True
                 try:
