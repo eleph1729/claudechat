@@ -9,7 +9,7 @@ def is_prime(n):
 
 primes = []
 n = 2
-while len(primes) < 10:
+while len(primes) < 100:
     if is_prime(n):
         primes.append(n)
     n += 1
