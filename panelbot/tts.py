@@ -18,6 +18,7 @@ different voice/engine.
 
 import asyncio
 import base64
+import collections
 import json
 import threading
 import time
@@ -86,24 +87,45 @@ async def _elevenlabs_stream(text_chunks: Iterable[str]):
                     await ws.send(json.dumps({"text": chunk}))
 
             async def receiver():
-                # Jitter buffer: incoming PCM is appended to `buf`, and a
-                # PortAudio callback thread drains it for playback. This
+                # Jitter buffer: incoming PCM chunks queue in a deque, and a
+                # PortAudio callback thread drains them for playback. This
                 # decouples network arrival from playback rate — without it,
                 # a blocking write() runs the audio device dry between chunks
                 # (an underrun heard as a click/glitch at chunk boundaries).
-                buf = bytearray()
-                lock = threading.Lock()
+                #
+                # The callback must finish well within its realtime deadline or
+                # the audio crackles, so it does the minimum: pop whole chunks
+                # and track a read offset into the front one (no per-call
+                # memmove), under a lock held only for fast memory copies. The
+                # producer base64-decodes OUTSIDE the lock so it never stalls
+                # the callback.
                 bytes_per_frame = 2  # int16 mono
                 prime_bytes = int(config.TTS_PRIME_SECONDS * sr) * bytes_per_frame
+                pending: "collections.deque[bytes]" = collections.deque()
+                head = b""          # partially-consumed front chunk
+                hpos = 0            # read offset into head
+                buffered = 0        # total bytes available across head + pending
+                underflows = 0
+                lock = threading.Lock()
 
                 def callback(outdata, frames, time_info, status):
+                    nonlocal head, hpos, buffered, underflows
                     need = frames * bytes_per_frame
+                    written = 0
                     with lock:
-                        have = min(need, len(buf))
-                        outdata[:have] = buf[:have]
-                        del buf[:have]
-                    if have < need:        # underrun -> brief silence, not a click
-                        outdata[have:] = b"\x00" * (need - have)
+                        while written < need:
+                            if hpos >= len(head):
+                                if not pending:
+                                    break
+                                head, hpos = pending.popleft(), 0
+                            take = min(need - written, len(head) - hpos)
+                            outdata[written:written + take] = head[hpos:hpos + take]
+                            hpos += take
+                            written += take
+                            buffered -= take
+                    if written < need:      # underrun -> brief silence, not a click
+                        outdata[written:] = b"\x00" * (need - written)
+                        underflows += 1
 
                 # latency="high" gives CoreAudio a roomier device buffer, which
                 # together with the prime lead keeps the stream from starving
@@ -123,12 +145,14 @@ async def _elevenlabs_stream(text_chunks: Iterable[str]):
                                 if config.TTS_TIMING:
                                     print(f"  [tts] first audio in "
                                           f"{time.monotonic() - start:.2f}s")
+                            pcm = base64.b64decode(audio_b64)   # decode off-lock
                             with lock:
-                                buf.extend(base64.b64decode(audio_b64))
-                                buffered = len(buf)
-                            # Prime a small lead before playback so the first
-                            # inter-chunk gap doesn't immediately underrun.
-                            if not started and buffered >= prime_bytes:
+                                pending.append(pcm)
+                                buffered += len(pcm)
+                                ready = buffered
+                            # Prime a lead before playback so early inter-chunk
+                            # gaps don't immediately underrun.
+                            if not started and ready >= prime_bytes:
                                 stream.start()
                                 started = True
                         if data.get("isFinal"):
@@ -141,10 +165,12 @@ async def _elevenlabs_stream(text_chunks: Iterable[str]):
                     # tail of the reply gets cut off.
                     while True:
                         with lock:
-                            remaining = len(buf)
-                        if remaining == 0:
+                            remaining = buffered
+                        if remaining <= 0:
                             break
                         await asyncio.sleep(0.05)
+                    if config.TTS_TIMING and underflows:
+                        print(f"  [tts] {underflows} buffer underflow(s) this reply")
                 finally:
                     stream.stop()
                     stream.close()
