@@ -1,0 +1,897 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RBMK-1000 Reactor Simulator</title>
+<style>
+  :root{
+    --bg:#0c0f0d;
+    --panel:#2b322d;
+    --panel-hi:#39413a;
+    --panel-lo:#20261f;
+    --bezel:#0f1211;
+    --line:#454f45;
+    --text:#d7ded2;
+    --muted:#8b968a;
+    --phos:#ffb300;
+    --phos-dim:#7a5a12;
+    --ok:#57e08a;
+    --caution:#f2c14e;
+    --alarm:#ff3b30;
+    --alarm-dk:#5a1512;
+    --blue:#3d7fc0;
+    --steam:#e6edf3;
+    --graphite:#7d746a;
+    --sans:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif;
+    --mono:ui-monospace,"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;font-family:var(--sans);color:var(--text);
+    background:
+      repeating-linear-gradient(0deg,rgba(255,255,255,.012) 0 2px,transparent 2px 4px),
+      radial-gradient(140% 120% at 50% -10%,#161b16 0%,var(--bg) 60%);
+    min-height:100vh;
+  }
+  .wrap{max-width:1500px;margin:0 auto;padding:16px 18px 40px}
+
+  header{
+    display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+    background:linear-gradient(180deg,var(--panel-hi),var(--panel));
+    border:1px solid var(--line);border-radius:10px;padding:12px 18px;
+    box-shadow:0 6px 20px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  .brand{display:flex;flex-direction:column;gap:2px}
+  .brand .t1{font-size:20px;font-weight:800;letter-spacing:.1em}
+  .brand .t1 b{color:var(--phos)}
+  .brand .t2{font-size:11px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase}
+  .master{
+    display:flex;align-items:center;gap:10px;padding:6px 14px;border-radius:8px;
+    background:var(--bezel);border:1px solid var(--line);font-family:var(--mono);
+  }
+  .master .lbl{font-size:10px;color:var(--muted);letter-spacing:.14em}
+  .master .val{font-size:15px;font-weight:700;letter-spacing:.06em}
+  .master .val.ok{color:var(--ok)} .master .val.warn{color:var(--caution)} .master .val.crit{color:var(--alarm)}
+  .spacer{flex:1}
+  .clock{font-family:var(--mono);font-size:14px;color:var(--phos);background:var(--bezel);border:1px solid var(--line);border-radius:8px;padding:6px 12px}
+  select,.tbtn{
+    font:inherit;font-size:12px;color:var(--text);background:var(--panel-lo);
+    border:1px solid var(--line);border-radius:7px;padding:7px 10px;cursor:pointer;
+  }
+  .tbtn.on{background:var(--phos-dim);border-color:var(--phos);color:#ffe9b0}
+  .az5{
+    font:inherit;font-weight:800;letter-spacing:.08em;color:#fff;
+    background:radial-gradient(120% 120% at 50% 30%,#ff5a4d,#c31408);
+    border:2px solid #7a0d06;border-radius:50%;width:74px;height:74px;cursor:pointer;
+    box-shadow:0 4px 0 #6a0b05,0 8px 16px rgba(0,0,0,.5),inset 0 2px 4px rgba(255,255,255,.35);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.05;
+    transition:transform .05s,box-shadow .05s;
+  }
+  .az5 small{font-size:8px;font-weight:600;opacity:.9;letter-spacing:.05em}
+  .az5:active{transform:translateY(4px);box-shadow:0 0 0 #6a0b05,0 3px 8px rgba(0,0,0,.5),inset 0 2px 4px rgba(255,255,255,.35)}
+  .az5.tripped{animation:az5blink .7s steps(1) infinite}
+  @keyframes az5blink{50%{filter:brightness(1.7)}}
+
+  .layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;margin-top:16px}
+  @media (max-width:1080px){.layout{grid-template-columns:1fr}}
+
+  .panel{
+    background:linear-gradient(180deg,var(--panel),var(--panel-lo));
+    border:1px solid var(--line);border-radius:12px;padding:14px;
+    box-shadow:0 8px 26px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.04);
+  }
+  .panel h2{
+    margin:0 0 12px;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);
+    display:flex;align-items:center;gap:8px;font-weight:700;
+  }
+  .panel h2 .ru{color:var(--phos);font-weight:700}
+  .panel h2::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
+
+  #gauges{width:100%;display:block;border-radius:8px;background:var(--bezel);border:1px solid var(--line)}
+
+  .readouts{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px;
+  }
+  @media (max-width:560px){.readouts{grid-template-columns:repeat(2,1fr)}}
+  .ro{
+    background:var(--bezel);border:1px solid var(--line);border-radius:7px;padding:7px 9px;
+    display:flex;flex-direction:column;gap:2px;
+  }
+  .ro .k{font-size:9px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ro .v{font-family:var(--mono);font-size:17px;font-weight:600;color:var(--phos);font-variant-numeric:tabular-nums;line-height:1}
+  .ro .v .u{font-size:10px;color:var(--muted);margin-left:2px}
+  .ro.warn .v{color:var(--caution)} .ro.crit .v{color:var(--alarm)}
+
+  .annun{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:12px}
+  @media (max-width:560px){.annun{grid-template-columns:repeat(2,1fr)}}
+  .tile{
+    background:#1a1f19;border:1px solid #2c332b;border-radius:6px;padding:8px 6px;
+    text-align:center;font-size:9.5px;font-weight:700;letter-spacing:.04em;color:#5c655a;
+    text-transform:uppercase;line-height:1.15;min-height:38px;display:flex;align-items:center;justify-content:center;
+    transition:background .1s,color .1s,box-shadow .1s;
+  }
+  .tile.amber{background:#4a3a10;color:#ffd873;box-shadow:0 0 10px rgba(242,193,78,.4),inset 0 0 8px rgba(242,193,78,.2)}
+  .tile.red{background:#4a1310;color:#ff9b93;box-shadow:0 0 12px rgba(255,59,48,.5),inset 0 0 8px rgba(255,59,48,.25);animation:tileblink 1s steps(1) infinite}
+  .tile.green{background:#123a22;color:#8bf0b0;box-shadow:inset 0 0 8px rgba(87,224,138,.2)}
+  @keyframes tileblink{50%{filter:brightness(1.55)}}
+
+  .controls{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+  @media (max-width:560px){.controls{grid-template-columns:1fr}}
+  .cgroup{background:var(--panel-lo);border:1px solid var(--line);border-radius:8px;padding:10px}
+  .cgroup .ct{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+  .cgroup .ct .rv{font-family:var(--mono);color:var(--phos);font-size:12px}
+  .btnrow{display:flex;gap:6px}
+  .cbtn{
+    flex:1;font:inherit;font-size:12px;font-weight:600;color:var(--text);
+    background:linear-gradient(180deg,var(--panel-hi),var(--panel-lo));
+    border:1px solid var(--line);border-radius:6px;padding:9px 6px;cursor:pointer;user-select:none;
+    transition:transform .05s,border-color .1s;
+  }
+  .cbtn:hover{border-color:#5e6a5c}
+  .cbtn:active{transform:translateY(1px)}
+  .cbtn.hold{background:linear-gradient(180deg,#4a5548,#2b322a)}
+  .cbtn.on{border-color:var(--ok);color:var(--ok)}
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;width:100%;height:5px;border-radius:3px;margin:6px 0 2px;
+    background:linear-gradient(90deg,var(--phos-dim),var(--phos));outline:none;cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#e9e4d6;border:2px solid var(--phos)}
+  input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#e9e4d6;border:2px solid var(--phos)}
+  input[type=range]:disabled{opacity:.4}
+  .pumprow{display:flex;gap:4px}
+  .pump{flex:1;height:22px;border-radius:4px;background:#20261f;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:9px;color:#4c554a;cursor:pointer;font-family:var(--mono)}
+  .pump.on{background:#123a22;border-color:var(--ok);color:var(--ok);box-shadow:inset 0 0 6px rgba(87,224,138,.3)}
+
+  #reactor{width:100%;display:block;border-radius:8px;background:linear-gradient(180deg,#0c100e,#080a09);border:1px solid var(--line)}
+  .rlegend{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:10.5px;color:var(--muted)}
+  .rlegend span{display:inline-flex;align-items:center;gap:5px}
+  .rlegend i{width:11px;height:11px;border-radius:2px;display:inline-block}
+
+  .note{font-size:11.5px;color:var(--muted);line-height:1.5;margin-top:12px;padding:10px;background:var(--panel-lo);border:1px solid var(--line);border-left:3px solid var(--phos);border-radius:6px}
+  .note b{color:var(--text)}
+
+  .log{margin-top:16px}
+  .logbox{
+    background:var(--bezel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;
+    height:120px;overflow-y:auto;font-family:var(--mono);font-size:11.5px;line-height:1.7;
+  }
+  .logbox .e{display:flex;gap:10px}
+  .logbox .e .ts{color:var(--muted)}
+  .logbox .e.info .m{color:var(--text)}
+  .logbox .e.warn .m{color:var(--caution)}
+  .logbox .e.crit .m{color:var(--alarm)}
+  .logbox .e.ok .m{color:var(--ok)}
+
+  .overlay{position:fixed;inset:0;background:rgba(6,8,6,.8);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;z-index:30;padding:20px}
+  .overlay.on{display:flex}
+  .modal{background:var(--panel);border:1px solid var(--alarm);border-radius:14px;max-width:520px;padding:26px;box-shadow:0 0 60px rgba(255,59,48,.3)}
+  .modal h3{margin:0 0 8px;font-size:22px;color:var(--alarm)}
+  .modal p{color:var(--text);font-size:14px;line-height:1.6}
+  .modal p.sub{color:var(--muted);font-size:12.5px}
+  .modal .hbtn{margin-top:16px;font:inherit;font-weight:700;color:#04120f;background:var(--phos);border:none;border-radius:8px;padding:11px 20px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="t1"><b>РБМК-1000</b> Reactor Simulator</div>
+      <div class="t2">Block Control Panel · Educational Physics Model</div>
+    </div>
+    <div class="master">
+      <span class="lbl">REACTOR</span>
+      <span class="val ok" id="masterState">SUBCRITICAL</span>
+    </div>
+    <span class="spacer"></span>
+    <div class="clock" id="clock">T+00:00:00</div>
+    <select id="scenario" title="Load scenario">
+      <option value="nominal">Scenario: Nominal 3200 MWt</option>
+      <option value="startup">Scenario: Low-power startup</option>
+      <option value="xenon">Scenario: Xenon-poisoned low power</option>
+      <option value="shutdown">Scenario: Cold shutdown</option>
+    </select>
+    <button class="tbtn" id="pauseBtn">⏸ Pause</button>
+    <button class="tbtn" data-acc="1">1×</button>
+    <button class="tbtn" data-acc="8">8×</button>
+    <button class="tbtn" data-acc="60">60×</button>
+    <button class="az5" id="az5"><span>АЗ-5</span><small>SCRAM</small></button>
+  </header>
+
+  <div class="layout">
+    <!-- CONTROL PANEL -->
+    <div class="panel">
+      <h2><span class="ru">БЩУ-4</span> · Main Control Panel</h2>
+      <canvas id="gauges" width="720" height="200"></canvas>
+
+      <div class="readouts" id="readouts"></div>
+
+      <div class="annun" id="annun"></div>
+
+      <div class="controls">
+        <div class="cgroup">
+          <div class="ct"><span>Control Rods <span class="ru">СУЗ</span></span><span class="rv" id="rodRv">0%</span></div>
+          <div class="btnrow">
+            <button class="cbtn" id="rodOut">▲ Withdraw</button>
+            <button class="cbtn" id="rodIn">▼ Insert</button>
+          </div>
+          <div class="ct" style="margin-top:10px"><span>Auto Regulator <span class="ru">АР</span></span></div>
+          <div class="btnrow">
+            <button class="cbtn" id="arBtn">AUTO: OFF</button>
+          </div>
+          <div style="margin-top:6px">
+            <input type="range" id="arSet" min="1" max="100" value="100" disabled>
+            <div class="ct" style="margin:0"><span>Power setpoint</span><span class="rv" id="arSetRv">100%</span></div>
+          </div>
+        </div>
+
+        <div class="cgroup">
+          <div class="ct"><span>Main Coolant Pumps <span class="ru">ГЦН</span></span><span class="rv" id="pumpRv">8/8</span></div>
+          <div class="pumprow" id="pumprow"></div>
+          <div class="ct" style="margin-top:10px"><span>Feedwater <span class="ru">ПВ</span></span><span class="rv" id="fwRv">100%</span></div>
+          <input type="range" id="fwSet" min="0" max="100" value="100">
+          <div class="ct" style="margin-top:8px"><span>Turbine valve <span class="ru">ТГ</span></span><span class="rv" id="tvRv">100%</span></div>
+          <input type="range" id="tvSet" min="0" max="100" value="100">
+        </div>
+      </div>
+    </div>
+
+    <!-- REACTOR VIEW -->
+    <div class="panel">
+      <h2><span class="ru">РЕАКТОР</span> · Core State</h2>
+      <canvas id="reactor" width="620" height="640"></canvas>
+      <div class="rlegend">
+        <span><i style="background:#23262b"></i>Absorber (boron)</span>
+        <span><i style="background:#b9945e"></i>Graphite tip</span>
+        <span><i style="background:#3d7fc0"></i>Water</span>
+        <span><i style="background:#e6edf3"></i>Steam / void</span>
+        <span><i style="background:#7d746a"></i>Graphite stack</span>
+        <span><i style="background:#ff7a2f"></i>Fuel heat</span>
+      </div>
+      <div class="note" id="scenarioNote"></div>
+    </div>
+  </div>
+
+  <div class="log panel">
+    <h2>Event Log <span class="ru">ЖУРНАЛ</span></h2>
+    <div class="logbox" id="logbox"></div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h3 id="ovTitle">Core Damage</h3>
+    <p id="ovBody"></p>
+    <p class="sub" id="ovSub"></p>
+    <button class="hbtn" id="ovBtn">Reset simulator</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ============================ PHYSICS CONSTANTS ============================
+  const BETA_I=[0.000215,0.001424,0.001274,0.002568,0.000748,0.000273];
+  const LAM_I =[0.0124,0.0305,0.111,0.301,1.14,3.01];
+  const BETA=BETA_I.reduce((a,b)=>a+b,0);          // total delayed fraction
+  const LAMBDA=8e-4;                                // prompt neutron generation time (s)
+  const PN=3200;                                    // nominal thermal power (MW)
+
+  // feedback coefficients
+  const C_VOID=0.080;      // + reactivity per unit average void fraction (RBMK positive void)
+  const A_DOP=2.4e-5;      // - reactivity per °C fuel (Doppler)
+  const A_GRT=6e-6;        // + reactivity per °C graphite
+  const W_XE=0.0358;       // xenon reactivity scale (-2.6β at full-power equilibrium)
+
+  // thermal
+  const K_FC=5.0;          // fuel->coolant conductance (MW/°C)
+  const CF=6.0;            // fuel heat capacity (MJ/°C)
+  const CG=40.0;           // graphite heat capacity (MJ/°C)
+  const KG=0.9;            // graphite->coolant (MW/°C)
+  const GR_FRAC=0.055;     // fraction of power deposited in graphite
+  const CP=4.5e-3;         // coolant cp (MJ/kg°C)
+  const HFG=1.5;           // latent heat (MJ/kg)
+  const W_NOM=10400;       // nominal core flow (kg/s) at 8 pumps
+  const T_IN=276;          // core inlet temp (°C) — low subcooling, near-saturated core
+
+  // xenon/iodine (per-second)
+  const LI=2.9e-5, LXE=2.1e-5, SIG=4.1e-5, A_I=2.9e-5, A_X=3e-7;
+  const iEq =P=> A_I*P/LI;
+  const xeEq=P=> (A_X*P+LI*iEq(P))/(LXE+SIG*P);   // steady xenon for power fraction P
+
+  // control-rod axial model
+  const KZ=40;                       // axial nodes (top=0)
+  const WT=4, WB=20;                 // top/bottom water column thickness (nodes) when withdrawn
+  const ABS_WORTH=0.050;             // full-insertion absorber worth (~-7.7β)
+  const GR_TIP=0.035;                // graphite-vs-water positive coefficient (positive-scram effect)
+  const PHI=[];                      // axial flux^2 weights (bottom-skewed), normalized
+  (()=>{ let s=0; const t=[];
+    for(let k=0;k<KZ;k++){ const f=(0.2+Math.sin(Math.PI*(k+0.5)/KZ))*(1+0.9*(k/(KZ-1))); t.push(f*f); s+=f*f; }
+    for(let k=0;k<KZ;k++) PHI.push(t[k]/s);
+  })();
+
+  // rod material reactivity by axial node, given bank insertion (0=out,1=in)
+  function rodReactivity(rod){
+    const absDepth=rod*KZ, dispTop=WT+rod*KZ, dispBot=dispTop+(KZ-WT-WB);
+    let r=0;
+    for(let k=0;k<KZ;k++){
+      let coeff;
+      if(k<absDepth) coeff=-ABS_WORTH;             // boron absorber
+      else if(k<dispTop) coeff=0;                  // water gap
+      else if(k<dispBot) coeff=GR_TIP;             // graphite displacer (positive vs water)
+      else coeff=0;                                // bottom water
+      r+=PHI[k]*coeff;
+    }
+    return r;
+  }
+  // axial material for drawing: 0 water,1 absorber,2 graphite
+  function rodProfile(rod){
+    const absDepth=rod*KZ, dispTop=WT+rod*KZ, dispBot=dispTop+(KZ-WT-WB);
+    const out=[];
+    for(let k=0;k<KZ;k++){
+      if(k<absDepth) out.push(1);
+      else if(k<dispTop) out.push(0);
+      else if(k<dispBot) out.push(2);
+      else out.push(0);
+    }
+    return out;
+  }
+
+  // ============================ STATE ============================
+  const S={};
+  function initState(scn){
+    Object.assign(S,{
+      t:0, n:1, C:[0,0,0,0,0,0],
+      Tf:924, Tc:284, Tg:520, Pdrum:6.9, Ldrum:0,
+      I:1, Xe:1, arInt:0,
+      rod:0.45, rodTarget:0.45, scram:false,
+      ar:false, arSet:1.0,
+      pumps:8, fw:1.0, tv:1.0,
+      bias:0, void:0.4, period:1e9, sur:0, rho:0, prevN:1,
+      coreDamaged:false, alarms:{}, mwe:0, rpm:3000, flow:1
+    });
+    let cfg;
+    switch(scn){
+      case 'startup': cfg={n:0.01,rod:0.6,Tf:320,Tc:270,Tg:290,Pdrum:5.5,ar:false,arSet:0.05,pumps:6,tv:0.1}; break;
+      case 'xenon':   cfg={n:0.26,rod:0.04,Tf:600,Tc:283,Tg:400,Pdrum:6.6,ar:false,arSet:0.26,pumps:4,tv:0.30}; break;
+      case 'shutdown':cfg={n:1e-6,rod:1.0,Tf:200,Tc:200,Tg:200,Pdrum:1.0,ar:false,arSet:0.01,pumps:2,tv:0,fw:0.3}; break;
+      default:        cfg={n:1.0,rod:0.45,Tf:924,Tc:284,Tg:520,Pdrum:6.9,ar:true,arSet:1.0,pumps:8,tv:1.0}; break;
+    }
+    Object.assign(S,cfg);
+    // xenon inventory: equilibrium for the running power, or a built-up pit
+    if(scn==='xenon'){ S.I=iEq(1.0)*1.2; S.Xe=xeEq(1.0)*1.5; }      // poisoned after a power cut
+    else if(scn==='shutdown'){ S.I=0; S.Xe=0; }
+    else { S.I=iEq(S.n); S.Xe=xeEq(S.n); }
+    S.rodTarget=S.rod;
+    // steady precursors
+    for(let i=0;i<6;i++) S.C[i]=BETA_I[i]*S.n/(LAMBDA*LAM_I[i]);
+    // relax temperatures / pressure to steady state for this power, then
+    // trim bias so total reactivity starts at zero (critical/steady)
+    updateFlow();
+    for(let s=0;s<600;s++) thermal(0.2);
+    computeVoid();
+    S.bias=-rawReactivity();
+  }
+
+  function updateFlow(){ S.flow=Math.max(0.06, S.pumps/8); }        // fraction of nominal
+  function Tsat(P){ return 190 + 94*Math.pow(Math.max(P,0.5)/6.9,0.25); } // ~284°C at 6.9 MPa
+
+  const VOID_PROMPT=0.5;   // fraction of boiling that tracks power promptly (fast void feedback)
+  function computeVoid(){
+    const W=W_NOM*S.flow;
+    const Qcool=Math.max(0, K_FC*(S.Tf-S.Tc)+KG*(S.Tg-S.Tc));
+    // boiling responds partly to prompt power (fast) and partly to fuel conduction (lagged)
+    const Qeff=(1-VOID_PROMPT)*Qcool + VOID_PROMPT*S.n*PN;
+    const subcool=W*CP*Math.max(2,(Tsat(S.Pdrum)-T_IN));    // MW to reach saturation
+    const boil=Math.max(0,Qeff-subcool);
+    const steam=boil/HFG;                                    // kg/s
+    const x=Math.min(0.9, steam/Math.max(W,1));
+    const rr=0.036, slip=1.5;
+    const aExit=x/(x+(1-x)*rr*slip);
+    S.void=Math.max(0,Math.min(0.95, aExit*0.62));
+    S.steamRate=steam;
+    S.Qcool=Qcool;
+  }
+
+  function rawReactivity(){
+    const rRod=rodReactivity(S.rod);
+    const rVoid=C_VOID*S.void;
+    const rDop=-A_DOP*(S.Tf-924);
+    const rGr=A_GRT*(S.Tg-520);
+    const rXe=-W_XE*S.Xe;
+    return rRod+rVoid+rDop+rGr+rXe;
+  }
+  function totalReactivity(){ return rawReactivity()+S.bias; }
+
+  // ============================ INTEGRATION ============================
+  function kinetics(dt){
+    let t=0;
+    while(t<dt){
+      const rho=totalReactivity();
+      const a=(rho-BETA)/LAMBDA;
+      let h=Math.min(dt-t,0.01);
+      if(Math.abs(a)>1e-3) h=Math.min(h,0.25/Math.abs(a));
+      h=Math.max(h,1e-6);
+      let Ssrc=0; for(let i=0;i<6;i++) Ssrc+=LAM_I[i]*S.C[i];
+      const ah=a*h, e=Math.exp(ah);
+      let nNew;
+      if(Math.abs(a)<1e-7) nNew=S.n+(a*S.n+Ssrc)*h;
+      else nNew=S.n*e+(Ssrc/a)*(e-1);
+      if(nNew<1e-12) nNew=1e-12;
+      const navg=0.5*(S.n+nNew);
+      for(let i=0;i<6;i++){
+        const ei=Math.exp(-LAM_I[i]*h);
+        S.C[i]=S.C[i]*ei+(BETA_I[i]/(LAMBDA*LAM_I[i]))*navg*(1-ei);
+      }
+      S.n=nNew; t+=h;
+      if(S.n>1e4) break;   // runaway; will be caught as core damage
+    }
+  }
+
+  function thermal(dt){
+    const P=S.n;                          // power fraction
+    computeVoid();
+    // fuel
+    const dTf=(P*PN - K_FC*(S.Tf-S.Tc))/CF;
+    S.Tf+=dTf*dt;
+    // graphite
+    const dTg=(P*PN*GR_FRAC - KG*(S.Tg-S.Tc))/CG;
+    S.Tg+=dTg*dt;
+    // coolant outlet: inlet + sensible rise, clamped at saturation while boiling
+    const W=W_NOM*S.flow;
+    const rise=Math.min(S.Qcool/(W*CP), (Tsat(S.Pdrum)-T_IN));
+    const target=(S.steamRate>1)?Tsat(S.Pdrum):(T_IN+Math.max(0,rise));
+    S.Tc+=(target-S.Tc)*Math.min(1,dt*0.5);
+    // steam drum pressure: production vs turbine draw
+    const draw=S.tv*(2000)*Math.sqrt(Math.max(0.2,S.Pdrum/6.9)); // kg/s demand
+    S.mwe=Math.max(0, draw*HFG*0.32);      // crude electrical output (MW)
+    S.Pdrum+=(S.steamRate-draw)*3.5e-4*dt;
+    if(S.Pdrum>7.4){ S.Pdrum-=(S.Pdrum-7.4)*0.5*dt; }  // relief valves
+    S.Pdrum=Math.max(0.3,Math.min(9,S.Pdrum));
+    // drum level: feedwater in vs boiloff
+    const fwFlow=S.fw*1900;
+    S.Ldrum+=(fwFlow-S.steamRate)*0.0009*dt;
+    S.Ldrum=Math.max(-260,Math.min(260,S.Ldrum));
+    // turbine speed
+    const rpmT=3000*(0.6+0.4*S.tv);
+    S.rpm+=(rpmT-S.rpm)*Math.min(1,dt*0.3);
+  }
+
+  function xenon(dt){
+    const P=S.n;
+    const dI=A_I*P-LI*S.I;
+    const dXe=A_X*P+LI*S.I-LXE*S.Xe-SIG*P*S.Xe;
+    S.I=Math.max(0,S.I+dI*dt);
+    S.Xe=Math.max(0,S.Xe+dXe*dt);
+  }
+
+  function rodMotion(dt){
+    if(S.scram){
+      S.rod=Math.min(1, S.rod+dt/18);      // 18 s full-travel gravity/drive insertion
+      if(S.rod>=1) S.rod=1;
+    } else if(S.ar){
+      const err=S.arSet-S.n;               // proportional auto regulator with deadband + rate limit
+      if(Math.abs(err)>0.008){
+        const rate=Math.max(-0.03,Math.min(0.03, -err*0.4));
+        S.rodTarget=Math.max(0,Math.min(1,S.rodTarget+rate*dt));
+      }
+      S.rod+=(S.rodTarget-S.rod)*Math.min(1,dt*2);
+    } else {
+      S.rod+=(S.rodTarget-S.rod)*Math.min(1,dt*2);
+    }
+  }
+
+  // one macro step
+  const MDT=0.05;
+  function step(){
+    if(S.coreDamaged) return;
+    rodMotion(MDT);
+    kinetics(MDT);
+    thermal(MDT);
+    xenon(MDT);
+    S.t+=MDT;
+    // diagnostics
+    S.rho=totalReactivity();
+    if(S.n>0&&S.prevN>0){
+      const g=Math.log(S.n/S.prevN)/MDT;
+      S.period=Math.abs(g)<1e-6?1e9:1/g;
+      S.sur=Math.log10(S.n/S.prevN)/MDT*60;
+    }
+    S.prevN=S.n;
+    checkTrips();
+  }
+
+  // ============================ TRIPS / ALARMS ============================
+  function orm(){ return Math.round(2+46*S.rod); }
+  function setAlarm(k,v){ if(!!S.alarms[k]!==!!v){ S.alarms[k]=v; } else S.alarms[k]=v; }
+
+  function checkTrips(){
+    const a=S.alarms;
+    a.scram=S.scram;
+    a.arm=S.ar;
+    a.hipow=S.n>1.05;
+    a.period=(S.period>0&&S.period<20);
+    a.promptcrit=(S.rho>=BETA);
+    a.loflow=S.flow<0.45;
+    a.lorm=orm()<15;
+    a.hipress=S.Pdrum>7.2;
+    a.lolevel=S.Ldrum<-150;
+    a.hivoid=S.void>0.65;
+    a.fuelhot=S.Tf>1800;
+    a.coredmg=S.coreDamaged;
+    // auto-scram conditions (safety system) — only when not already scrammed
+    if(!S.scram && !S.coreDamaged){
+      if(S.n>1.10){ trip('AZ overpower >110% — automatic SCRAM','crit'); doScram(false); }
+      else if(S.period>0&&S.period<8){ trip('Short period <8 s — automatic SCRAM','crit'); doScram(false); }
+    }
+    // core damage: a sustained prompt power excursion or fuel melt
+    if(!S.coreDamaged && (S.Tf>2800 || S.n>4)){
+      coreDamage();
+    }
+    // log edges
+    logEdges();
+  }
+
+  const prevAlarm={};
+  const ALARM_MSG={
+    hipow:['Reactor power above 105%','warn'],
+    period:['Reactor period short (<20 s)','warn'],
+    promptcrit:['PROMPT CRITICAL — reactivity ≥ β','crit'],
+    loflow:['Coolant flow low','warn'],
+    lorm:['Operating reactivity margin < 15 rods','warn'],
+    hipress:['Steam pressure high','warn'],
+    lolevel:['Steam drum level low','warn'],
+    hivoid:['Core void fraction high','warn'],
+    fuelhot:['Fuel temperature high','crit']
+  };
+  function logEdges(){
+    for(const k in ALARM_MSG){
+      if(S.alarms[k]&&!prevAlarm[k]) trip(ALARM_MSG[k][0],ALARM_MSG[k][1]);
+      prevAlarm[k]=S.alarms[k];
+    }
+  }
+
+  function doScram(manual){
+    if(S.scram) return;
+    S.scram=true; S.ar=false;
+    if(manual) trip('АЗ-5 pressed — manual SCRAM initiated','crit');
+    // note the physics: from a nearly-withdrawn, high-flux state the graphite
+    // displacer tips add positive reactivity as they enter the lower core.
+    if(S.rod<0.25) trip('Graphite displacers entering lower core — positive insertion','crit');
+  }
+
+  function coreDamage(){
+    S.coreDamaged=true; S.scram=true;
+    trip('FUEL DISASSEMBLY — power excursion exceeded structural limits','crit');
+    document.getElementById('ovTitle').textContent='Core Damage — Power Excursion';
+    document.getElementById('ovBody').textContent=
+      'A prompt-critical power spike drove fuel temperature past its limit faster than heat could be removed. In this simulation the core is destroyed.';
+    document.getElementById('ovSub').textContent=
+      'This is the failure mode the RBMK’s positive void coefficient and graphite-tipped rods could produce at low power with a depleted reactivity margin — the physics behind the 1986 Chernobyl accident.';
+    document.getElementById('overlay').classList.add('on');
+  }
+
+  // ============================ LOG ============================
+  const logbox=document.getElementById('logbox');
+  function fmtT(t){ const h=(t/3600|0),m=((t%3600)/60|0),s=(t%60|0);
+    return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'); }
+  function trip(msg,kind){
+    const e=document.createElement('div'); e.className='e '+(kind||'info');
+    e.innerHTML='<span class="ts">'+fmtT(S.t)+'</span><span class="m">'+msg+'</span>';
+    logbox.appendChild(e); logbox.scrollTop=logbox.scrollHeight;
+    while(logbox.children.length>120) logbox.removeChild(logbox.firstChild);
+  }
+
+  // ============================ RENDER: GAUGES ============================
+  const gc=document.getElementById('gauges'), gx=gc.getContext('2d');
+  function drawGauge(cx,cy,r,frac,label,valText,zone){
+    const a0=Math.PI*0.75, a1=Math.PI*2.25;
+    gx.lineWidth=r*0.14;
+    // track
+    gx.strokeStyle='#1b201a'; gx.beginPath(); gx.arc(cx,cy,r,a0,a1); gx.stroke();
+    // colored zones
+    const zoneColors={ok:'#2f5a3c',warn:'#5a4a12',crit:'#5a1512'};
+    if(zone){ gx.strokeStyle=zoneColors[zone]||'#2f5a3c'; }
+    // value arc
+    frac=Math.max(0,Math.min(1,frac));
+    const av=a0+(a1-a0)*frac;
+    gx.strokeStyle = frac>0.85?'#ff3b30':(frac>0.7?'#f2c14e':'#ffb300');
+    gx.beginPath(); gx.arc(cx,cy,r,a0,av); gx.stroke();
+    // needle
+    gx.strokeStyle='#e9e4d6'; gx.lineWidth=2;
+    gx.beginPath(); gx.moveTo(cx,cy); gx.lineTo(cx+Math.cos(av)*r*0.92,cy+Math.sin(av)*r*0.92); gx.stroke();
+    gx.fillStyle='#e9e4d6'; gx.beginPath(); gx.arc(cx,cy,r*0.09,0,7); gx.fill();
+    // text
+    gx.fillStyle='#8b968a'; gx.font='10px '+'"Segoe UI",sans-serif'; gx.textAlign='center';
+    gx.fillText(label,cx,cy+r*0.55);
+    gx.fillStyle='#ffb300'; gx.font='bold 15px ui-monospace,monospace';
+    gx.fillText(valText,cx,cy+r*0.85);
+  }
+  function renderGauges(){
+    const W=gc.width,H=gc.height;
+    gx.clearRect(0,0,W,H);
+    const r=58, y=H*0.42, xs=[W*0.13,W*0.38,W*0.63,W*0.88];
+    drawGauge(xs[0],y,r, Math.min(1,S.n/1.2), 'THERMAL POWER', (S.n*100).toFixed(S.n<0.1?2:0)+'%');
+    // period: map log period to 0..1 (short=high)
+    const pf = S.period>0 ? (S.period>1e8?0: Math.max(0,Math.min(1,1-Math.log10(Math.max(S.period,1))/3))) :
+                            Math.max(0,Math.min(1,1-Math.log10(Math.max(-S.period,1))/3))*0.4;
+    const pTxt = Math.abs(S.period)>1e6?'∞': (S.period>0?'+':'')+S.period.toFixed(0)+'s';
+    drawGauge(xs[1],y,r, pf, 'PERIOD', pTxt);
+    drawGauge(xs[2],y,r, Math.min(1,S.Pdrum/8), 'STEAM PRESS', S.Pdrum.toFixed(1)+'MPa');
+    drawGauge(xs[3],y,r, Math.min(1,S.flow), 'COOLANT FLOW', (S.flow*100).toFixed(0)+'%');
+  }
+
+  // ============================ RENDER: READOUTS ============================
+  const readoutDefs=[
+    ['pow','Power','MWt',()=> (S.n*PN).toFixed(0)],
+    ['mwe','Generator','MWe',()=> S.mwe.toFixed(0)],
+    ['rho','Reactivity','β',()=> (S.rho/BETA).toFixed(2)],
+    ['xe','Xenon-135','β',()=> (-W_XE*S.Xe/BETA).toFixed(2)],
+    ['tf','Fuel temp','°C',()=> S.Tf.toFixed(0)],
+    ['tg','Graphite','°C',()=> S.Tg.toFixed(0)],
+    ['tc','Core outlet','°C',()=> S.Tc.toFixed(0)],
+    ['void','Void frac','%',()=> (S.void*100).toFixed(0)],
+    ['orm','ORM','rods',()=> orm()],
+    ['rod','Rod pos','%ins',()=> (S.rod*100).toFixed(0)],
+    ['dl','Drum level','mm',()=> (S.Ldrum>0?'+':'')+S.Ldrum.toFixed(0)],
+    ['rpm','Turbine','rpm',()=> S.rpm.toFixed(0)]
+  ];
+  const roEl=document.getElementById('readouts');
+  readoutDefs.forEach(d=>{
+    const el=document.createElement('div'); el.className='ro'; el.id='ro_'+d[0];
+    el.innerHTML='<span class="k">'+d[1]+'</span><span class="v"><span id="rov_'+d[0]+'">–</span><span class="u">'+d[2]+'</span></span>';
+    roEl.appendChild(el);
+  });
+  function renderReadouts(){
+    readoutDefs.forEach(d=>{ document.getElementById('rov_'+d[0]).textContent=d[3](); });
+    setRoState('ro_pow', S.n>1.05?'crit':(S.n>0.98?'warn':''));
+    setRoState('ro_orm', orm()<15?'crit':(orm()<20?'warn':''));
+    setRoState('ro_tf', S.Tf>1800?'crit':(S.Tf>1200?'warn':''));
+    setRoState('ro_void', S.void>0.68?'crit':(S.void>0.58?'warn':''));
+    setRoState('ro_rho', Math.abs(S.rho)>=BETA?'crit':(Math.abs(S.rho)>0.4*BETA?'warn':''));
+  }
+  function setRoState(id,s){ const e=document.getElementById(id); e.classList.remove('warn','crit'); if(s)e.classList.add(s); }
+
+  // ============================ RENDER: ANNUNCIATORS ============================
+  const annunDefs=[
+    ['scram','АЗ-5 SCRAM','red'],['hipow','POWER HIGH','red'],['period','SHORT PERIOD','amber'],['promptcrit','PROMPT CRIT','red'],
+    ['loflow','COOLANT FLOW LOW','amber'],['lorm','ОЗР / ORM LOW','amber'],['hipress','PRESSURE HIGH','amber'],['lolevel','DRUM LEVEL LOW','amber'],
+    ['hivoid','VOID HIGH','amber'],['fuelhot','FUEL TEMP HIGH','red'],['coredmg','CORE DAMAGE','red'],['arm','AUTO REGULATOR','green']
+  ];
+  const annunEl=document.getElementById('annun');
+  annunDefs.forEach(d=>{ const t=document.createElement('div'); t.className='tile'; t.id='an_'+d[0]; t.textContent=d[1]; annunEl.appendChild(t); });
+  function renderAnnun(){
+    annunDefs.forEach(d=>{
+      const t=document.getElementById('an_'+d[0]);
+      t.className='tile'+(S.alarms[d[0]]?' '+d[2]:'');
+    });
+  }
+
+  // ============================ RENDER: REACTOR ============================
+  const rc=document.getElementById('reactor'), rx=rc.getContext('2d');
+  let bubbles=[];
+  function renderReactor(){
+    const W=rc.width,H=rc.height;
+    rx.clearRect(0,0,W,H);
+    rx.fillStyle='#080a09'; rx.fillRect(0,0,W,H);
+
+    // ---- layout regions ----
+    const coreX=110, coreY=140, coreW=W-220, coreH=360;
+    const P=S.n;
+
+    // steam drums (top)
+    for(const dx of [coreX+coreW*0.16, coreX+coreW*0.84]){
+      rx.fillStyle='#2a3038'; roundRectR(dx-60,50,120,42,10); rx.fill();
+      rx.strokeStyle='#454f56'; rx.stroke();
+      // water level
+      const lv=0.5 - S.Ldrum/900;
+      rx.fillStyle='#2f6fb0'; rx.fillRect(dx-56,50+42*lv,112,42*(1-lv)-4);
+      rx.fillStyle='#8b968a'; rx.font='9px sans-serif'; rx.textAlign='center';
+      rx.fillText('STEAM DRUM',dx,46);
+    }
+    // steam pipes to turbine
+    rx.strokeStyle='#3a4149'; rx.lineWidth=6;
+    rx.beginPath(); rx.moveTo(coreX+coreW*0.84,72); rx.lineTo(W-40,72); rx.lineTo(W-40,150); rx.stroke();
+    // turbine box
+    rx.fillStyle='#232a22'; roundRectR(W-88,150,60,70,8); rx.fill(); rx.strokeStyle='#454f45'; rx.stroke();
+    rx.fillStyle=S.rpm>3200?'#ff3b30':'#57e08a'; rx.font='9px monospace'; rx.textAlign='center';
+    rx.fillText('TG', W-58,176); rx.fillText(S.rpm.toFixed(0), W-58,190); rx.fillText(S.mwe.toFixed(0)+'MW', W-58,204);
+
+    // ---- graphite stack ----
+    const gt=Math.min(1,(S.Tg-200)/800);
+    rx.fillStyle=`rgb(${90+gt*70|0},${76+gt*24|0},${60})`;
+    roundRectR(coreX-14,coreY-14,coreW+28,coreH+28,10); rx.fill();
+    rx.strokeStyle='#454f45'; rx.lineWidth=1.5; rx.stroke();
+    rx.fillStyle='#8b968a'; rx.font='9px sans-serif'; rx.textAlign='left';
+    rx.fillText('GRAPHITE MODERATOR STACK  '+S.Tg.toFixed(0)+'°C', coreX-14, coreY-20);
+
+    // ---- fuel/coolant channels ----
+    const nChan=13, cw=coreW/nChan;
+    for(let c=0;c<nChan;c++){
+      const x=coreX+c*cw+cw*0.5, chW=cw*0.34;
+      // boiling height: below boilFrac liquid, above is steam/void
+      const boilStart = 1 - Math.min(0.9, S.void*1.3);
+      for(let seg=0;seg<24;seg++){
+        const fy=coreY+coreH*(seg/24), fh=coreH/24+1;
+        const frac=seg/24;
+        let col;
+        if(frac<boilStart){ col='#2f6fb0'; }                    // water
+        else{
+          const q=(frac-boilStart)/Math.max(0.05,1-boilStart);
+          const g=180+q*70; col=`rgb(${g|0},${(g+10)|0},${(g+20)|0})`; // steam whitening upward
+        }
+        rx.fillStyle=col; rx.fillRect(x-chW/2,fy,chW,fh);
+      }
+      // fuel heat glow overlay
+      const hot=Math.min(1,(S.Tf-300)/1600)*Math.min(1,P*3);
+      if(hot>0.02){
+        rx.fillStyle=`rgba(255,${120-hot*90|0},30,${0.10+hot*0.5})`;
+        rx.fillRect(x-chW/2,coreY,chW,coreH);
+      }
+    }
+
+    // ---- control rods ----
+    const prof=rodProfile(S.rod);
+    const rodCols=[3,5,7,9,11];               // which channel columns carry a rod
+    rx.fillStyle='#8b968a'; rx.font='9px sans-serif'; rx.textAlign='left';
+    rx.fillText('CONTROL RODS  '+(S.rod*100).toFixed(0)+'% inserted'+(S.scram?'  — SCRAM':''), coreX-14, coreY+coreH+26);
+    for(const c of rodCols){
+      const x=coreX+c*cw+cw*0.5, rw=cw*0.42;
+      // top drive header
+      rx.fillStyle='#3a4149'; rx.fillRect(x-rw/2-2, coreY-30, rw+4, 18);
+      for(let k=0;k<KZ;k++){
+        const fy=coreY+coreH*(k/KZ), fh=coreH/KZ+1, m=prof[k];
+        if(m===1){ rx.fillStyle='#23262b'; rx.fillRect(x-rw/2,fy,rw,fh); }       // absorber
+        else if(m===2){ rx.fillStyle='#b9945e'; rx.fillRect(x-rw/2,fy,rw,fh); }  // graphite tip
+        // water(0): leave channel showing
+      }
+      // rod outline
+      rx.strokeStyle='rgba(0,0,0,.5)'; rx.lineWidth=1; rx.strokeRect(x-rw/2,coreY,rw,coreH);
+    }
+
+    // ---- neutron flux glow ----
+    const glow=Math.min(0.6, Math.log10(Math.max(S.n,1e-4)+1)*0.5+P*0.3);
+    if(glow>0.01){
+      const g=rx.createRadialGradient(coreX+coreW/2,coreY+coreH*0.6,20,coreX+coreW/2,coreY+coreH*0.6,coreW*0.7);
+      g.addColorStop(0,`rgba(120,255,180,${glow})`); g.addColorStop(1,'rgba(120,255,180,0)');
+      rx.fillStyle=g; rx.fillRect(0,0,W,H);
+    }
+
+    // ---- pumps (bottom) ----
+    rx.fillStyle='#8b968a'; rx.font='9px sans-serif'; rx.textAlign='center';
+    rx.fillText('MAIN COOLANT PUMPS (ГЦН)', W/2, H-56);
+    for(let i=0;i<8;i++){
+      const px=coreX + coreW*(i+0.5)/8, py=H-34, on=i<S.pumps;
+      rx.beginPath(); rx.arc(px,py,11,0,7);
+      rx.fillStyle=on?'#123a22':'#20261f'; rx.fill();
+      rx.strokeStyle=on?'#57e08a':'#454f45'; rx.lineWidth=1.5; rx.stroke();
+      if(on){ // spinning tick
+        const ang=(S.t*6+i)%(Math.PI*2);
+        rx.strokeStyle='#57e08a'; rx.beginPath(); rx.moveTo(px,py); rx.lineTo(px+Math.cos(ang)*7,py+Math.sin(ang)*7); rx.stroke();
+      }
+    }
+    // downcomer
+    rx.strokeStyle='#3a4149'; rx.lineWidth=6;
+    rx.beginPath(); rx.moveTo(coreX+coreW/2,coreY+coreH); rx.lineTo(coreX+coreW/2,H-40); rx.stroke();
+  }
+  function roundRectR(x,y,w,h,r){ rx.beginPath();
+    if(rx.roundRect) rx.roundRect(x,y,w,h,r);
+    else { rx.moveTo(x+r,y);rx.arcTo(x+w,y,x+w,y+h,r);rx.arcTo(x+w,y+h,x,y+h,r);rx.arcTo(x,y+h,x,y,r);rx.arcTo(x,y,x+w,y,r);rx.closePath(); }
+  }
+
+  // ============================ MASTER STATE ============================
+  function renderMaster(){
+    const m=document.getElementById('masterState');
+    let txt,cls;
+    if(S.coreDamaged){ txt='CORE DAMAGE'; cls='crit'; }
+    else if(S.scram){ txt='SCRAMMED'; cls='warn'; }
+    else if(S.rho>=BETA){ txt='PROMPT CRITICAL'; cls='crit'; }
+    else if(S.n>1.05){ txt='OVERPOWER'; cls='crit'; }
+    else if(Math.abs(S.period)<1e6 && S.period>0 && S.period<40){ txt='SUPERCRITICAL'; cls='warn'; }
+    else if(S.n>0.02){ txt='CRITICAL / POWER'; cls='ok'; }
+    else { txt='SUBCRITICAL'; cls='ok'; }
+    m.textContent=txt; m.className='val '+cls;
+    document.getElementById('clock').textContent='T+'+fmtT(S.t);
+    document.getElementById('az5').classList.toggle('tripped',S.scram&&!S.coreDamaged);
+  }
+
+  // ============================ CONTROLS ============================
+  let rodHold=0; // -1 withdraw, +1 insert
+  const rodOut=document.getElementById('rodOut'), rodIn=document.getElementById('rodIn');
+  function holdBtn(el,dir){
+    const down=e=>{e.preventDefault(); if(S.scram||S.coreDamaged)return; rodHold=dir; S.ar=false; syncAR(); el.classList.add('hold');};
+    const up=()=>{rodHold=0; el.classList.remove('hold');};
+    el.addEventListener('pointerdown',down); el.addEventListener('pointerup',up);
+    el.addEventListener('pointerleave',up); el.addEventListener('pointercancel',up);
+  }
+  holdBtn(rodOut,-1); holdBtn(rodIn,1);
+
+  const arBtn=document.getElementById('arBtn'), arSet=document.getElementById('arSet');
+  function syncAR(){
+    arBtn.textContent='AUTO: '+(S.ar?'ON':'OFF'); arBtn.classList.toggle('on',S.ar);
+    arSet.disabled=!S.ar;
+  }
+  arBtn.onclick=()=>{ if(S.scram||S.coreDamaged)return; S.ar=!S.ar; if(S.ar)S.rodTarget=S.rod; syncAR(); };
+  arSet.oninput=()=>{ S.arSet=arSet.value/100; document.getElementById('arSetRv').textContent=arSet.value+'%'; };
+
+  const pumprow=document.getElementById('pumprow');
+  for(let i=0;i<8;i++){ const p=document.createElement('div'); p.className='pump'; p.textContent=i+1;
+    p.onclick=()=>{ if(S.coreDamaged)return; S.pumps=(i<S.pumps)?i:i+1; updateFlow(); renderPumps(); };
+    pumprow.appendChild(p); }
+  function renderPumps(){
+    [...pumprow.children].forEach((p,i)=>p.classList.toggle('on',i<S.pumps));
+    document.getElementById('pumpRv').textContent=S.pumps+'/8';
+  }
+
+  const fwSet=document.getElementById('fwSet'), tvSet=document.getElementById('tvSet');
+  fwSet.oninput=()=>{ S.fw=fwSet.value/100; document.getElementById('fwRv').textContent=fwSet.value+'%'; };
+  tvSet.oninput=()=>{ S.tv=tvSet.value/100; document.getElementById('tvRv').textContent=tvSet.value+'%'; };
+
+  document.getElementById('az5').onclick=()=>{ if(S.coreDamaged)return; doScram(true); };
+
+  const NOTES={
+    nominal:'<b>Nominal operation.</b> Rods and feedbacks are balanced near 3200 MWt. Try withdrawing rods, then watch power, period and void climb — the RBMK’s <b>positive void coefficient</b> reinforces the rise.',
+    startup:'<b>Low-power startup.</b> Withdraw rods slowly to bring the reactor critical and watch the period. Small reactivity changes have large effects here.',
+    xenon:'<b>Xenon-poisoned low power.</b> Xenon-135 has built up (an “iodine pit”), rods are nearly fully withdrawn and the operating reactivity margin (ОЗР/ORM) is dangerously low. This mirrors the conditions before the 1986 accident. Now press <b>АЗ-5</b>: as the graphite displacer tips enter the high-flux lower core, reactivity briefly <b>rises</b> before the absorbers take over — the positive-scram effect.',
+    shutdown:'<b>Cold shutdown.</b> All rods inserted, reactor deeply subcritical. Use this to explore controls safely.'
+  };
+  const scenSel=document.getElementById('scenario');
+  function loadScenario(scn){
+    initState(scn);
+    logbox.innerHTML=''; for(const k in prevAlarm) prevAlarm[k]=false;
+    trip('Scenario loaded: '+scn,'ok');
+    document.getElementById('scenarioNote').innerHTML=NOTES[scn];
+    // sync UI
+    document.getElementById('overlay').classList.remove('on');
+    fwSet.value=S.fw*100; document.getElementById('fwRv').textContent=(S.fw*100|0)+'%';
+    tvSet.value=S.tv*100; document.getElementById('tvRv').textContent=(S.tv*100|0)+'%';
+    arSet.value=S.arSet*100; document.getElementById('arSetRv').textContent=(S.arSet*100|0)+'%';
+    syncAR(); renderPumps();
+    renderAll();
+  }
+  scenSel.onchange=()=>loadScenario(scenSel.value);
+  document.getElementById('ovBtn').onclick=()=>loadScenario(scenSel.value);
+
+  // time controls
+  let paused=false, accel=1;
+  document.querySelectorAll('[data-acc]').forEach(b=>{
+    b.onclick=()=>{ accel=+b.dataset.acc; document.querySelectorAll('[data-acc]').forEach(x=>x.classList.toggle('on',x===b)); };
+  });
+  document.querySelector('[data-acc="1"]').classList.add('on');
+  document.getElementById('pauseBtn').onclick=()=>{ paused=!paused;
+    document.getElementById('pauseBtn').textContent=paused?'▶ Run':'⏸ Pause'; };
+
+  // ============================ RENDER + LOOP ============================
+  function renderAll(){
+    renderGauges(); renderReadouts(); renderAnnun(); renderReactor(); renderMaster();
+    document.getElementById('rodRv').textContent=(S.rod*100).toFixed(0)+'%';
+  }
+  let last=performance.now(), acc=0;
+  function frame(now){
+    let real=(now-last)/1000; last=now; if(real>0.25)real=0.25;
+    if(!paused && !S.coreDamaged){
+      acc+=real*accel;
+      let guard=0;
+      while(acc>=MDT && guard<4000){
+        if(rodHold&&!S.scram){ S.rodTarget=Math.max(0,Math.min(1,S.rodTarget+rodHold*MDT*0.05)); }
+        step(); acc-=MDT; guard++;
+      }
+      if(acc>MDT*10) acc=0;
+    } else acc=0;
+    renderAll();
+    requestAnimationFrame(frame);
+  }
+
+  // ============================ BOOT ============================
+  function fit(cv){ const r=cv.getBoundingClientRect(); const dpr=Math.min(window.devicePixelRatio||1,2);
+    cv.width=Math.round(r.width*dpr); cv.height=Math.round(r.height*dpr);
+    cv.getContext('2d').setTransform(dpr,0,0,dpr,0,0); }
+  // keep internal resolution fixed for simplicity of coordinates; scale via CSS
+  loadScenario('nominal');
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
