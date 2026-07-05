@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backgammon</title>
+<style>
+  :root{
+    --felt:#123a30;
+    --wood-hi:#6b4426;
+    --wood:#4a2f1c;
+    --wood-lo:#2c1a0e;
+    --ivory:#f2ead5;
+    --onyx:#1e1e20;
+    --gold:#d9b25e;
+    --text:#ece3d0;
+    --muted:#9a9384;
+    --panel:#241812;
+    --line:#3d2a1b;
+    --serif:Georgia,"Times New Roman",serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;font-family:var(--sans);color:var(--text);
+    background:
+      radial-gradient(120% 100% at 50% 0%,#20342e 0%,#0c1512 60%,#070d0b 100%);
+    min-height:100vh;display:flex;flex-direction:column;align-items:center;
+  }
+  header{
+    width:100%;max-width:1040px;display:flex;align-items:center;gap:16px;
+    padding:16px 20px 8px;flex-wrap:wrap;
+  }
+  .title{font-family:var(--serif);font-size:30px;font-weight:700;letter-spacing:.02em;margin:0;color:var(--ivory)}
+  .title .b{color:var(--gold)}
+  .subtitle{font-size:12px;color:var(--muted);letter-spacing:.06em}
+  .spacer{flex:1}
+  .btn{
+    font:inherit;font-size:13px;color:var(--text);background:linear-gradient(180deg,#33241a,#241812);
+    border:1px solid var(--line);border-radius:8px;padding:9px 15px;cursor:pointer;
+    display:inline-flex;align-items:center;gap:7px;transition:border-color .15s,transform .05s,background .15s;
+  }
+  .btn:hover{border-color:var(--gold)}
+  .btn:active{transform:translateY(1px)}
+  .btn:disabled{opacity:.4;cursor:default}
+  .btn.gold{background:linear-gradient(180deg,#e6c675,#c99f42);border-color:#e6c675;color:#2c1a08;font-weight:700}
+  .btn.gold:disabled{opacity:.45}
+
+  .wrap{width:100%;max-width:1040px;padding:4px 20px 40px}
+  .statusbar{
+    display:flex;align-items:center;gap:14px;margin-bottom:10px;flex-wrap:wrap;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;
+  }
+  .who{display:flex;align-items:center;gap:9px;font-size:14px}
+  .who .disc{width:16px;height:16px;border-radius:50%;box-shadow:inset 0 1px 2px rgba(255,255,255,.4),0 1px 2px rgba(0,0,0,.5)}
+  .disc.w{background:radial-gradient(circle at 35% 30%,#fffbe9,#d9cba0)}
+  .disc.b{background:radial-gradient(circle at 35% 30%,#54545a,#141416)}
+  .who .pip{font-family:var(--mono);color:var(--muted);font-size:12px}
+  .who.active{color:var(--gold)}
+  .msg{margin-left:auto;font-size:13.5px;color:var(--muted);min-height:18px;text-align:right}
+  .msg b{color:var(--text)}
+
+  .board-holder{position:relative;width:100%}
+  canvas#board{width:100%;display:block;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.55),0 0 0 1px #000}
+
+  .overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(6,10,8,.66);backdrop-filter:blur(2px);border-radius:12px;z-index:5}
+  .overlay.on{display:flex}
+  .card{background:linear-gradient(180deg,#2a1c12,#1c130c);border:1px solid var(--gold);border-radius:14px;padding:26px 30px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+  .card h2{font-family:var(--serif);margin:0 0 6px;font-size:28px;color:var(--gold)}
+  .card p{margin:0 0 16px;color:var(--text);font-size:14px}
+
+  footer{margin-top:12px;font-size:11.5px;color:var(--muted);text-align:center;line-height:1.6}
+  kbd{font-family:var(--mono);font-size:11px;background:#2a1c12;border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+</style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1 class="title">Back<span class="b">gammon</span></h1>
+      <div class="subtitle">You play ivory · the computer plays onyx</div>
+    </div>
+    <span class="spacer"></span>
+    <button class="btn" id="soundBtn">🔊 Sound</button>
+    <button class="btn" id="newBtn">New game</button>
+  </header>
+
+  <div class="wrap">
+    <div class="statusbar">
+      <div class="who" id="whoYou"><span class="disc w"></span>You <span class="pip" id="pipYou">167</span></div>
+      <div class="who" id="whoAi"><span class="disc b"></span>Computer <span class="pip" id="pipAi">167</span></div>
+      <div class="msg" id="msg">Press <b>Roll</b> to begin.</div>
+      <button class="btn gold" id="rollBtn">🎲 Roll</button>
+      <button class="btn" id="undoBtn" disabled>↶ Undo</button>
+    </div>
+
+    <div class="board-holder">
+      <canvas id="board" width="1000" height="680"></canvas>
+      <div class="overlay" id="overlay">
+        <div class="card">
+          <h2 id="ovTitle">You win!</h2>
+          <p id="ovText"></p>
+          <button class="btn gold" id="ovBtn">Play again</button>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      Click one of your checkers, then a highlighted point, to move. Bear off by clicking the tray at right once all your checkers are home.<br>
+      You move ivory toward your home (bottom-right); the computer moves onyx toward the top-right.
+    </footer>
+  </div>
+
+<script>
+(() => {
+  "use strict";
+  // ======================================================================
+  //  ENGINE  (pure functions over a plain state object)
+  //  points[0..23]: +n white (human), -n black (computer). |n| = count.
+  //  White moves 23->0, home idx0..5, bears off past 0.  Black mirrors.
+  // ======================================================================
+  function newBoard(){
+    const p=new Array(24).fill(0);
+    p[23]=2; p[12]=5; p[7]=3; p[5]=5;        // white / human
+    p[0]=-2; p[11]=-5; p[16]=-3; p[18]=-5;   // black / computer
+    return {points:p, barW:0, barB:0, offW:0, offB:0};
+  }
+  const clone = s => ({points:s.points.slice(), barW:s.barW, barB:s.barB, offW:s.offW, offB:s.offB});
+  const sig = s => s.points.join(',')+'|'+s.barW+'|'+s.barB;
+
+  function pip(s, pl){
+    let t=0;
+    for(let i=0;i<24;i++){ const v=s.points[i];
+      if(pl===1 && v>0) t+=v*(i+1);
+      if(pl===-1 && v<0) t+=(-v)*(24-i);
+    }
+    t += pl===1 ? s.barW*25 : s.barB*25;
+    return t;
+  }
+  const allHome = (s,pl)=>{
+    if(pl===1){ if(s.barW) return false; for(let i=6;i<24;i++) if(s.points[i]>0) return false; }
+    else { if(s.barB) return false; for(let i=0;i<18;i++) if(s.points[i]<0) return false; }
+    return true;
+  };
+  const canLand = (s,pl,d)=> pl===1 ? s.points[d]>=-1 : s.points[d]<=1;
+  const isHit   = (s,pl,d)=> pl===1 ? s.points[d]===-1 : s.points[d]===1;
+
+  function canBearOff(s,pl,i,die){
+    if(!allHome(s,pl)) return false;
+    if(pl===1){
+      const dist=i+1;
+      if(dist===die) return true;
+      if(die>dist){ for(let j=i+1;j<=5;j++) if(s.points[j]>0) return false; return true; }
+      return false;
+    } else {
+      const dist=24-i;
+      if(dist===die) return true;
+      if(die>dist){ for(let j=i-1;j>=18;j--) if(s.points[j]<0) return false; return true; }
+      return false;
+    }
+  }
+
+  // single moves for one die; from is 'bar' or idx; to is 'off' or idx
+  function singleMoves(s, pl, die){
+    const out=[];
+    const onBar = pl===1 ? s.barW>0 : s.barB>0;
+    if(onBar){
+      const dst = pl===1 ? (24-die) : (die-1);
+      if(dst>=0 && dst<24 && canLand(s,pl,dst)) out.push({from:'bar', to:dst, die, hit:isHit(s,pl,dst)});
+      return out;
+    }
+    for(let i=0;i<24;i++){
+      if(pl===1 ? s.points[i]<=0 : s.points[i]>=0) continue;
+      const dst = i + (pl===1 ? -die : die);
+      if(dst>=0 && dst<24){
+        if(canLand(s,pl,dst)) out.push({from:i, to:dst, die, hit:isHit(s,pl,dst)});
+      } else {
+        if(canBearOff(s,pl,i,die)) out.push({from:i, to:'off', die, hit:false});
+      }
+    }
+    return out;
+  }
+
+  function applyMove(s, pl, m){
+    if(m.from==='bar'){ if(pl===1) s.barW--; else s.barB--; }
+    else s.points[m.from] -= pl;
+    if(m.to==='off'){ if(pl===1) s.offW++; else s.offB++; return; }
+    if(m.hit){ if(pl===1){ s.barB++; } else { s.barW++; } s.points[m.to]=0; }
+    s.points[m.to] += pl;
+  }
+
+  // max number of dice playable from state s with dice array
+  function maxPlies(s, pl, dice, memo){
+    if(dice.length===0) return 0;
+    const key = sig(s)+'#'+dice.slice().sort().join('');
+    if(memo[key]!==undefined) return memo[key];
+    let best=0;
+    for(const d of new Set(dice)){
+      const mvs=singleMoves(s,pl,d);
+      for(const mv of mvs){
+        const ns=clone(s); applyMove(ns,pl,mv);
+        const nd=dice.slice(); nd.splice(nd.indexOf(d),1);
+        best=Math.max(best, 1+maxPlies(ns,pl,nd,memo));
+        if(best===dice.length) { memo[key]=best; return best; }
+      }
+    }
+    memo[key]=best; return best;
+  }
+
+  // enumerate all maximal-length move sequences; each => {moves:[...], state}
+  function enumerateMaximal(s, pl, dice){
+    const memo={};
+    const M=maxPlies(s,pl,dice,memo);
+    const acc=[]; const seen=new Set();
+    (function dfs(st, dl, path){
+      if(path.length===M){
+        const k=path.map(m=>m.from+'>'+m.to).join('|');
+        if(!seen.has(k)){ seen.add(k); acc.push({moves:path, state:st}); }
+        return;
+      }
+      for(const d of new Set(dl)){
+        for(const mv of singleMoves(st,pl,d)){
+          const ns=clone(st); applyMove(ns,pl,mv);
+          const nd=dl.slice(); nd.splice(nd.indexOf(d),1);
+          if(1+maxPlies(ns,pl,nd,memo)===M-path.length) dfs(ns,nd,[...path,mv]);
+        }
+      }
+    })(s, dice, []);
+    // "must play higher die" rule when only one die is playable
+    if(M===1 && dice.length===2 && dice[0]!==dice[1]){
+      const hi=Math.max(dice[0],dice[1]);
+      if(acc.some(sq=>sq.moves[0].die===hi)) return acc.filter(sq=>sq.moves[0].die===hi);
+    }
+    return acc;
+  }
+
+  const winner = s => s.offW===15 ? 1 : (s.offB===15 ? -1 : 0);
+
+  // ---- AI evaluation (from black/computer perspective; higher = better) ----
+  function evalBlack(s){
+    let v=0;
+    v += (pip(s,1)-pip(s,-1))*1.0;
+    v += (s.offB - s.offW)*14;
+    v += s.barW*9 - s.barB*16;
+    for(let i=0;i<24;i++){
+      const c=s.points[i];
+      if(c<=-2){ v+=3.2; if(i>=18) v+=2.2; if(i>=13&&i<=18) v+=1.4; }   // points / blocks
+      else if(c===-1){                                                  // black blot: hit risk
+        let shots=0; for(let w=i+1; w<=Math.min(23,i+6); w++) if(s.points[w]>0) shots+=s.points[w];
+        if(s.barW>0 && i>=18 && s.points[i]>=-1) shots+=0.5;
+        v -= 2.2 + shots*1.8;
+        if(i>=18) v -= 1.5;                                             // blot in own home worse
+      }
+      else if(c===1){ v += 1.2; }                                      // white blot we could target
+    }
+    return v;
+  }
+
+  // ======================================================================
+  //  GAME STATE / TURN MANAGER
+  // ======================================================================
+  let S, turn, dice, seqs, played, startSnap, phase, message, aiTimer=null;
+  // phase: 'idle' (awaiting roll), 'move' (human moving), 'ai', 'over'
+
+  function resetGame(){
+    S=newBoard(); phase='opening'; message='Roll to see who starts.';
+    dice=[]; seqs=[]; played=[]; turn=1;
+    overlay.classList.remove('on');
+    clearTimeout(aiTimer);
+    updateUI(); draw();
+  }
+
+  function rollPair(){ return [1+Math.floor(Math.random()*6), 1+Math.floor(Math.random()*6)]; }
+  function expand(d){ return d[0]===d[1] ? [d[0],d[0],d[0],d[0]] : [d[0],d[1]]; }
+
+  function beginRoll(){
+    if(phase==='opening'){
+      let d;
+      do{ d=rollPair(); }while(d[0]===d[1]);
+      turn = d[0]>d[1] ? 1 : -1;
+      dice = d.slice(); diceLeft = d.slice();
+      snd.roll();
+      message = (turn===1?'You':'Computer')+' won the opening roll.';
+      startPlay();
+      return;
+    }
+    // normal roll for current player
+    dice = rollPair(); diceLeft = expand(dice); snd.roll();
+    startPlay();
+  }
+
+  let diceLeft=[];
+  function startPlay(){
+    startSnap=clone(S); played=[];
+    seqs=enumerateMaximal(S, turn, diceLeft);
+    updateUI();
+    if(seqs.length===0 || seqs[0].moves.length===0){
+      message=(turn===1?'You have':'Computer has')+' no legal move.';
+      phase='move'; updateUI(); draw();
+      setTimeout(endTurn, turn===1?900:700);
+      return;
+    }
+    if(turn===1){ phase='move'; message='Choose a checker to move.'; draw(); }
+    else { phase='ai'; message='Computer is thinking…'; draw(); setTimeout(aiPlay, 650); }
+  }
+
+  function allowedNext(){
+    const k=played.length, out=[];
+    const seen=new Set();
+    for(const sq of seqs){
+      if(sq.moves.length<=k) continue;
+      let ok=true;
+      for(let i=0;i<k;i++){ if(sq.moves[i].from!==played[i].from||sq.moves[i].to!==played[i].to){ ok=false; break; } }
+      if(!ok) continue;
+      const mv=sq.moves[k]; const id=mv.from+'>'+mv.to;
+      if(!seen.has(id)){ seen.add(id); out.push(mv); }
+    }
+    return out;
+  }
+  const turnLen = ()=> seqs.length? Math.max(...seqs.map(s=>s.moves.length)) : 0;
+
+  function humanMove(mv){
+    applyMove(S, 1, mv);
+    played.push(mv);
+    mv.hit ? snd.hit() : (mv.to==='off'? snd.bear() : snd.move());
+    diceLeft.splice(diceLeft.indexOf(mv.die),1);
+    selected=null; legalTargets=[];
+    if(winner(S)){ return finishGame(); }
+    if(played.length>=turnLen() || allowedNext().length===0){ updateUI(); draw(); setTimeout(endTurn,250); }
+    else { updateUI(); draw(); }
+  }
+
+  function undo(){
+    if(phase!=='move'||played.length===0) return;
+    played.pop();
+    S=clone(startSnap);
+    diceLeft=expand(dice);
+    for(const mv of played){ applyMove(S,1,mv); diceLeft.splice(diceLeft.indexOf(mv.die),1); }
+    selected=null; legalTargets=[]; snd.move();
+    message='Move your checkers.';
+    updateUI(); draw();
+  }
+
+  function aiPlay(){
+    // choose best maximal sequence
+    let best=seqs[0], bestScore=-1e9;
+    for(const sq of seqs){
+      const sc=evalBlack(sq.state) + Math.random()*0.6;
+      if(sc>bestScore){ bestScore=sc; best=sq; }
+    }
+    const mvs=best.moves.slice();
+    (function stepAI(){
+      if(mvs.length===0){ if(winner(S)) return finishGame(); return endTurn(); }
+      const mv=mvs.shift();
+      applyMove(S,-1,mv);
+      mv.hit ? snd.hit() : (mv.to==='off'? snd.bear() : snd.move());
+      draw();
+      if(winner(S)) return finishGame();
+      aiTimer=setTimeout(stepAI, 560);
+    })();
+  }
+
+  function endTurn(){
+    turn=-turn; phase='idle';
+    dice=[]; diceLeft=[]; seqs=[]; played=[];
+    message = turn===1 ? 'Your roll.' : 'Computer to roll…';
+    updateUI(); draw();
+    if(turn===-1) setTimeout(()=>{ if(phase==='idle') beginRoll(); }, 700);
+  }
+
+  function finishGame(){
+    phase='over';
+    const w=winner(S);
+    const loserOff = w===1 ? S.offB : S.offW;
+    const loserBack = (()=>{ // backgammon check: loser has checker on bar or in winner's home
+      if(w===1){ if(S.barB) return true; for(let i=0;i<6;i++) if(S.points[i]<0) return true; }
+      else { if(S.barW) return true; for(let i=18;i<24;i++) if(S.points[i]>0) return true; }
+      return false;
+    })();
+    let mult='Single game', pts=1;
+    if(loserOff===0){ if(loserBack){ mult='Backgammon! (triple)'; pts=3; } else { mult='Gammon! (double)'; pts=2; } }
+    snd[w===1?'win':'lose']();
+    ovTitle.textContent = w===1 ? 'You win!' : 'Computer wins';
+    ovText.textContent = mult + (pts>1?'':' — well played.');
+    overlay.classList.add('on');
+    updateUI(); draw();
+  }
+
+  // ======================================================================
+  //  RENDER
+  // ======================================================================
+  const cv=document.getElementById('board'), ctx=cv.getContext('2d');
+  const W=cv.width, H=cv.height;
+  const FR=26, TRAY=74, BAR=52;
+  const bTop=FR, bBot=H-FR, bLeft=FR, bRight=W-FR-TRAY;
+  const midX=(bLeft+bRight)/2;
+  const leftL=bLeft, leftR=midX-BAR/2, rightL=midX+BAR/2, rightR=bRight;
+  const halfW=leftR-leftL, slotW=halfW/6;
+  const midY=(bTop+bBot)/2;
+  const R=Math.min(slotW*0.42, 26);
+  const pointH=(bBot-bTop)*0.42;
+
+  function pointGeom(idx){
+    let cx, top;
+    if(idx<=5){ cx=rightL+(5-idx+0.5)*slotW; top=false; }
+    else if(idx<=11){ cx=leftL+(11-idx+0.5)*slotW; top=false; }
+    else if(idx<=17){ cx=leftL+(idx-12+0.5)*slotW; top=true; }
+    else { cx=rightL+(idx-18+0.5)*slotW; top=true; }
+    return {cx, top};
+  }
+  function checkerXY(idx, k){
+    const g=pointGeom(idx);
+    const y = g.top ? bTop+R+ k*R*1.7 : bBot-R - k*R*1.7;
+    return {x:g.cx, y, top:g.top};
+  }
+
+  let selected=null, legalTargets=[], hoverPoint=null;
+
+  function draw(){
+    // table + frame
+    ctx.clearRect(0,0,W,H);
+    let g=ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,'#5c3a20'); g.addColorStop(.5,'#432a17'); g.addColorStop(1,'#2c1a0e');
+    ctx.fillStyle=g; roundRect(0,0,W,H,14); ctx.fill();
+    // playing bed
+    ctx.fillStyle='#0f3229'; ctx.fillRect(bLeft,bTop,bRight-bLeft,bBot-bTop);
+    // felt texture sheen
+    let fg=ctx.createRadialGradient(midX,midY,40,midX,midY,W*0.6);
+    fg.addColorStop(0,'rgba(40,90,70,.5)'); fg.addColorStop(1,'rgba(6,20,15,.35)');
+    ctx.fillStyle=fg; ctx.fillRect(bLeft,bTop,bRight-bLeft,bBot-bTop);
+
+    // points
+    for(let i=0;i<24;i++) drawPoint(i);
+
+    // bar
+    let bg=ctx.createLinearGradient(midX-BAR/2,0,midX+BAR/2,0);
+    bg.addColorStop(0,'#3a2415'); bg.addColorStop(.5,'#5a3a22'); bg.addColorStop(1,'#3a2415');
+    ctx.fillStyle=bg; ctx.fillRect(midX-BAR/2,bTop,BAR,bBot-bTop);
+    ctx.strokeStyle='rgba(0,0,0,.4)'; ctx.strokeRect(midX-BAR/2,bTop,BAR,bBot-bTop);
+
+    // tray (bear-off)
+    let tg=ctx.createLinearGradient(bRight,0,W-FR,0);
+    tg.addColorStop(0,'#2c1a0e'); tg.addColorStop(.5,'#3f2817'); tg.addColorStop(1,'#2c1a0e');
+    ctx.fillStyle=tg; ctx.fillRect(bRight+4,bTop,TRAY-8,bBot-bTop);
+    ctx.strokeStyle='rgba(0,0,0,.5)'; ctx.strokeRect(bRight+4,bTop,TRAY-8,bBot-bTop);
+    drawTray();
+
+    // highlight legal target points + bear-off
+    for(const t of legalTargets){
+      if(t.to==='off'){ ctx.strokeStyle='rgba(217,178,94,.9)'; ctx.lineWidth=3;
+        roundRect(bRight+4,turn===1?bBot-100:bTop, TRAY-8,100,6); ctx.stroke(); ctx.lineWidth=1; }
+      else { const g2=pointGeom(t.to); highlightPoint(t.to); }
+    }
+    // selected source glow
+    if(typeof selected==='number'){ highlightPoint(selected, true); }
+
+    // checkers on points
+    for(let i=0;i<24;i++) drawStack(i);
+    // bar checkers
+    drawBar();
+
+    // status / pip labels (dice drawn by the patched draw wrapper)
+    updateUI();
+  }
+
+  function drawPoint(i){
+    const g=pointGeom(i);
+    const light = (i%2===0);
+    const col = light ? '#e6d3a8' : '#8a352f';
+    const y0 = g.top ? bTop : bBot;
+    const y1 = g.top ? bTop+pointH : bBot-pointH;
+    const grd=ctx.createLinearGradient(0,y0,0,y1);
+    grd.addColorStop(0,col); grd.addColorStop(1, light?'#c9a97e':'#5f231f');
+    ctx.fillStyle=grd;
+    ctx.beginPath();
+    ctx.moveTo(g.cx-slotW*0.46, y0);
+    ctx.lineTo(g.cx+slotW*0.46, y0);
+    ctx.lineTo(g.cx, y1);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle='rgba(0,0,0,.22)'; ctx.stroke();
+  }
+
+  function highlightPoint(i, sel){
+    const g=pointGeom(i);
+    const y0 = g.top ? bTop : bBot, y1 = g.top ? bTop+pointH : bBot-pointH;
+    ctx.save();
+    ctx.strokeStyle = sel? 'rgba(217,178,94,1)' : 'rgba(217,178,94,.85)';
+    ctx.lineWidth = sel?4:3;
+    ctx.shadowColor='rgba(217,178,94,.7)'; ctx.shadowBlur=12;
+    ctx.beginPath();
+    ctx.moveTo(g.cx-slotW*0.46, y0); ctx.lineTo(g.cx+slotW*0.46, y0);
+    ctx.lineTo(g.cx, y1); ctx.closePath(); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawChecker(x,y,white){
+    const grd=ctx.createRadialGradient(x-R*0.35,y-R*0.4,R*0.15,x,y,R);
+    if(white){ grd.addColorStop(0,'#fffdf3'); grd.addColorStop(.6,'#efe4c6'); grd.addColorStop(1,'#c9b98a'); }
+    else { grd.addColorStop(0,'#5c5c64'); grd.addColorStop(.55,'#2a2a2e'); grd.addColorStop(1,'#0e0e10'); }
+    ctx.fillStyle=grd;
+    ctx.beginPath(); ctx.arc(x,y,R,0,7); ctx.fill();
+    ctx.strokeStyle= white?'rgba(120,100,60,.6)':'rgba(0,0,0,.7)'; ctx.lineWidth=1.5; ctx.stroke();
+    // inner ring
+    ctx.strokeStyle= white?'rgba(255,255,255,.5)':'rgba(255,255,255,.12)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(x,y,R*0.62,0,7); ctx.stroke();
+  }
+
+  function drawStack(i){
+    const v=S.points[i]; if(v===0) return;
+    const white=v>0, n=Math.abs(v), show=Math.min(n,5);
+    for(let k=0;k<show;k++){ const p=checkerXY(i,k); drawChecker(p.x,p.y,white); }
+    if(n>5){ const p=checkerXY(i,4); ctx.fillStyle=white?'#2c1a08':'#f2ead5';
+      ctx.font='bold 15px monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(n, p.x, p.y); }
+  }
+
+  function drawBar(){
+    for(let k=0;k<S.barW;k++) drawChecker(midX, midY+40+k*R*1.5, true);
+    for(let k=0;k<S.barB;k++) drawChecker(midX, midY-40-k*R*1.5, false);
+    if(S.barW||S.barB){ ctx.fillStyle='rgba(217,178,94,.9)'; ctx.font='11px sans-serif'; ctx.textAlign='center'; }
+  }
+
+  function drawTray(){
+    const cx=bRight+4+(TRAY-8)/2, tw=(TRAY-8)-10;
+    // white borne off at bottom, black at top
+    for(let k=0;k<S.offW;k++){ const y=bBot-8-k*8; ctx.fillStyle='#efe4c6'; roundRect(cx-tw/2,y-6,tw,7,2); ctx.fill(); ctx.strokeStyle='rgba(0,0,0,.4)'; ctx.stroke(); }
+    for(let k=0;k<S.offB;k++){ const y=bTop+8+k*8; ctx.fillStyle='#2a2a2e'; roundRect(cx-tw/2,y-1,tw,7,2); ctx.fill(); ctx.strokeStyle='rgba(0,0,0,.6)'; ctx.stroke(); }
+    ctx.fillStyle='var(--muted)';
+  }
+
+  function diceLeftDisplay(){
+    // show all dice of the roll, mark used ones dim
+    const full = expand(dice);
+    const rem = diceLeft.slice();
+    return full.map(v=>{ const idx=rem.indexOf(v); if(idx>=0){ rem.splice(idx,1); return {v,used:false}; } return {v,used:true}; })
+               .map(o=>({...o, v:o.v}));
+  }
+  function dieFace(x,y,s,n,used,white){
+    ctx.save(); if(used) ctx.globalAlpha=0.3;
+    const grd=ctx.createLinearGradient(x,y,x,y+s);
+    if(white){ grd.addColorStop(0,'#fffdf5'); grd.addColorStop(1,'#ddd2b4'); }
+    else { grd.addColorStop(0,'#3a3a40'); grd.addColorStop(1,'#17171a'); }
+    ctx.fillStyle=grd; roundRect(x,y,s,s,8); ctx.fill();
+    ctx.strokeStyle='rgba(0,0,0,.5)'; ctx.lineWidth=1.5; ctx.stroke();
+    ctx.fillStyle=white?'#20160a':'#efe9dc';
+    const L=x+s*0.27,C=x+s*0.5,Rr=x+s*0.73,T=y+s*0.27,M=y+s*0.5,B=y+s*0.73, r=s*0.08;
+    const dot=(cx,cy)=>{ ctx.beginPath(); ctx.arc(cx,cy,r,0,7); ctx.fill(); };
+    const map={1:[[C,M]],2:[[L,T],[Rr,B]],3:[[L,T],[C,M],[Rr,B]],4:[[L,T],[Rr,T],[L,B],[Rr,B]],
+      5:[[L,T],[Rr,T],[C,M],[L,B],[Rr,B]],6:[[L,T],[Rr,T],[L,M],[Rr,M],[L,B],[Rr,B]]};
+    (map[n]||[]).forEach(p=>dot(p[0],p[1]));
+    ctx.restore();
+  }
+
+  function roundRect(x,y,w,h,r){ ctx.beginPath();
+    if(ctx.roundRect) ctx.roundRect(x,y,w,h,r);
+    else { ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+  }
+
+  function drawDiceReal(){
+    if(phase!=='move' && phase!=='ai') return;
+    const list=diceLeftDisplay(); if(!list.length) return;
+    const dieS=42, gap=14;
+    const baseX = turn===1 ? (rightL+rightR)/2 : (leftL+leftR)/2;
+    let x = baseX - (list.length*(dieS+gap)-gap)/2;
+    const y = midY - dieS/2;
+    for(const d of list){ dieFace(x,y,dieS,d.v,d.used, turn===1); x+=dieS+gap; }
+  }
+
+  // ======================================================================
+  //  INPUT
+  // ======================================================================
+  function locate(mx,my){
+    // tray?
+    if(mx>=bRight+4 && mx<=W-FR){ return {kind:'tray'}; }
+    // bar?
+    if(mx>=midX-BAR/2 && mx<=midX+BAR/2){ return {kind:'bar'}; }
+    // point columns
+    let half, base;
+    if(mx>=leftL && mx<leftR){ base=leftL; }
+    else if(mx>=rightL && mx<=rightR){ base=rightL; }
+    else return null;
+    const slot=Math.floor((mx-base)/slotW);
+    if(slot<0||slot>5) return null;
+    const top = my < midY;
+    let idx;
+    if(base===rightL){ idx = top ? 18+slot : (5-slot); }
+    else { idx = top ? 12+slot : (11-slot); }
+    return {kind:'point', idx};
+  }
+
+  cv.addEventListener('click', e=>{
+    if(phase!=='move') return;
+    const rect=cv.getBoundingClientRect();
+    const mx=(e.clientX-rect.left)*(W/rect.width), my=(e.clientY-rect.top)*(H/rect.height);
+    const loc=locate(mx,my);
+    if(!loc) return;
+    const nexts=allowedNext();
+    // if a source is selected and click is a legal target
+    if(selected!==null){
+      if(loc.kind==='tray'){
+        const m=legalTargets.find(t=>t.to==='off'); if(m){ humanMove(m); return; }
+      }
+      if(loc.kind==='point'){
+        const m=legalTargets.find(t=>t.to===loc.idx); if(m){ humanMove(m); return; }
+      }
+    }
+    // select a source
+    let src = loc.kind==='bar' ? 'bar' : (loc.kind==='point'? loc.idx : null);
+    if(src===null && loc.kind==='tray'){ /* clicking tray with nothing selected */ return; }
+    const avail = nexts.filter(m=>m.from===src);
+    if(avail.length){ selected=src; legalTargets=avail; snd.tick(); draw(); }
+    else { selected=null; legalTargets=[]; draw(); if(nexts.length) { snd.err(); } }
+  });
+
+  // ======================================================================
+  //  SOUND (WebAudio synthesis)
+  // ======================================================================
+  let AC=null, muted=false, master=null;
+  function audio(){ if(!AC){ AC=new (window.AudioContext||window.webkitAudioContext)(); master=AC.createGain(); master.gain.value=0.5; master.connect(AC.destination); } if(AC.state==='suspended') AC.resume(); return AC; }
+  function noise(dur,f,q,gain,when){ const a=audio(); const n=a.createBuffer(1,a.sampleRate*dur,a.sampleRate); const d=n.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*(1-i/d.length); const src=a.createBufferSource(); src.buffer=n;
+    const bp=a.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=f; bp.Q.value=q||1;
+    const g=a.createGain(); g.gain.value=gain; src.connect(bp); bp.connect(g); g.connect(master); src.start(when||a.currentTime); }
+  function tone(f,dur,type,gain,when){ const a=audio(); const o=a.createOscillator(); const g=a.createGain(); o.type=type||'sine'; o.frequency.value=f;
+    when=when||a.currentTime; g.gain.setValueAtTime(0.0001,when); g.gain.exponentialRampToValueAtTime(gain,when+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,when+dur); o.connect(g); g.connect(master); o.start(when); o.stop(when+dur+0.02); }
+  const snd={
+    move(){ if(muted)return; noise(0.09,900,2,0.35); tone(180,0.06,'triangle',0.12); },
+    tick(){ if(muted)return; noise(0.04,1600,3,0.18); },
+    hit(){ if(muted)return; noise(0.14,500,1.5,0.5); tone(90,0.14,'square',0.18); },
+    bear(){ if(muted)return; const a=audio(); tone(660,0.16,'sine',0.25); tone(990,0.20,'sine',0.18,a.currentTime+0.06); },
+    roll(){ if(muted)return; const a=audio(); for(let i=0;i<7;i++) noise(0.05,700+Math.random()*600,2,0.16,a.currentTime+i*0.05);
+      noise(0.09,600,2,0.3,a.currentTime+0.4); noise(0.09,520,2,0.3,a.currentTime+0.5); },
+    win(){ if(muted)return; const a=audio(),n=[523,659,784,1047]; n.forEach((f,i)=>tone(f,0.4,'triangle',0.22,a.currentTime+i*0.12)); },
+    lose(){ if(muted)return; const a=audio(),n=[392,330,262]; n.forEach((f,i)=>tone(f,0.4,'sine',0.2,a.currentTime+i*0.16)); },
+    err(){ if(muted)return; tone(140,0.16,'square',0.14); }
+  };
+
+  // ======================================================================
+  //  UI GLUE
+  // ======================================================================
+  const overlay=document.getElementById('overlay'), ovTitle=document.getElementById('ovTitle'),
+        ovText=document.getElementById('ovText'), msgEl=document.getElementById('msg');
+  function updateUI(){
+    document.getElementById('pipYou').textContent=pip(S,1);
+    document.getElementById('pipAi').textContent=pip(S,-1);
+    document.getElementById('whoYou').classList.toggle('active', turn===1 && phase!=='over');
+    document.getElementById('whoAi').classList.toggle('active', turn===-1 && phase!=='over');
+    msgEl.innerHTML=message;
+    document.getElementById('rollBtn').disabled = !(phase==='opening' || (phase==='idle'&&turn===1));
+    document.getElementById('undoBtn').disabled = !(phase==='move'&&played.length>0);
+  }
+
+  document.getElementById('rollBtn').onclick=()=>{ audio(); if(phase==='opening'||(phase==='idle'&&turn===1)) beginRoll(); };
+  document.getElementById('undoBtn').onclick=undo;
+  document.getElementById('newBtn').onclick=resetGame;
+  document.getElementById('ovBtn').onclick=resetGame;
+  document.getElementById('soundBtn').onclick=()=>{ muted=!muted; document.getElementById('soundBtn').textContent=muted?'🔇 Muted':'🔊 Sound'; if(!muted){audio();} };
+  window.addEventListener('keydown',e=>{ if(e.key==='u') undo(); if(e.key===' '){ e.preventDefault(); document.getElementById('rollBtn').click(); } });
+
+  // patch draw to use real dice drawer (defined after draw)
+  const _draw=draw;
+  draw=function(){ _draw(); drawDiceReal(); };
+
+  resetGame();
+})();
+</script>
+</body>
+</html>
