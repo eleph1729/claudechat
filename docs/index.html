@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Splitting Headache</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --card: #ffffff; --ink: #1c1b1a; --muted: #7a756e;
+    --line: #e7e4de; --accent: #c2410c; --accent-soft: #fff1e8;
+    --ok: #166534; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171615; --card: #201f1d; --ink: #ece9e4; --muted: #948f87;
+      --line: #34322e; --accent: #fb923c; --accent-soft: #2c2119; --ok: #4ade80;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #171615; --card: #201f1d; --ink: #ece9e4; --muted: #948f87;
+    --line: #34322e; --accent: #fb923c; --accent-soft: #2c2119; --ok: #4ade80;
+  }
+  :root[data-theme="light"] {
+    --bg: #f6f5f2; --card: #ffffff; --ink: #1c1b1a; --muted: #7a756e;
+    --line: #e7e4de; --accent: #c2410c; --accent-soft: #fff1e8; --ok: #166534;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    min-height: 100vh; padding: 3rem 1rem 4rem;
+  }
+  header { text-align: center; margin-bottom: 2rem; }
+  h1 { font-size: 2rem; letter-spacing: -0.02em; margin: 0; font-weight: 700; }
+  h1 .pill { color: var(--accent); }
+  header p { color: var(--muted); margin: .4rem 0 0; max-width: 34rem; }
+  .card {
+    width: 100%; max-width: 46rem; background: var(--card);
+    border: 1px solid var(--line); border-radius: 16px;
+    box-shadow: 0 1px 2px rgb(0 0 0 / .04), 0 8px 24px rgb(0 0 0 / .05);
+    padding: 1.5rem;
+  }
+  #drop {
+    border: 2px dashed var(--line); border-radius: 12px; cursor: pointer;
+    padding: 3rem 1.5rem; text-align: center; color: var(--muted);
+    transition: border-color .15s, background .15s;
+  }
+  #drop.hover, #drop:hover { border-color: var(--accent); background: var(--accent-soft); }
+  #drop strong { color: var(--ink); }
+  #drop .big { font-size: 2.2rem; display: block; margin-bottom: .5rem; }
+  .hidden { display: none !important; }
+  .stats { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; align-items: center;
+           color: var(--muted); font-size: .9rem; margin-bottom: 1rem; }
+  .stats b { color: var(--ink); font-weight: 600; }
+  .filename { font-weight: 600; color: var(--ink); max-width: 100%; overflow-wrap: anywhere; }
+  .controls { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; margin-bottom: 1rem; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .seg button {
+    border: 0; background: transparent; color: var(--muted); padding: .35rem .9rem;
+    font: inherit; font-size: .85rem; cursor: pointer;
+  }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .offset { display: inline-flex; align-items: center; gap: .4rem; font-size: .85rem; color: var(--muted); }
+  .offset input {
+    width: 4.2rem; padding: .3rem .4rem; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--ink); font: inherit; font-size: .85rem; text-align: center;
+  }
+  #tree {
+    border: 1px solid var(--line); border-radius: 12px; padding: .75rem 1rem;
+    max-height: 24rem; overflow: auto; font-size: .92rem; margin-bottom: 1.25rem;
+  }
+  #tree details details, #tree details .doc { margin-left: 1.25rem; }
+  #tree summary { cursor: pointer; font-weight: 600; padding: .15rem 0; list-style: none; }
+  #tree summary::before { content: "▸ 📁 "; font-weight: 400; }
+  #tree details[open] > summary::before { content: "▾ 📂 "; font-weight: 400; }
+  .doc { display: flex; gap: .6rem; padding: .12rem 0; align-items: baseline; }
+  .doc .t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .doc .t::before { content: "📄 "; }
+  .pg { font-family: var(--mono); font-size: .78rem; color: var(--muted); white-space: nowrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: .5rem; border: 0; cursor: pointer;
+    background: var(--accent); color: #fff; font: inherit; font-weight: 600;
+    padding: .65rem 1.4rem; border-radius: 10px; transition: filter .15s;
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .btn[disabled] { opacity: .55; cursor: default; }
+  .row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+  .ghost {
+    background: transparent; border: 1px solid var(--line); color: var(--muted);
+    font: inherit; font-size: .85rem; padding: .5rem 1rem; border-radius: 10px; cursor: pointer;
+  }
+  .spin {
+    width: 1em; height: 1em; border: 2px solid rgb(255 255 255 / .4);
+    border-top-color: #fff; border-radius: 50%; animation: r .7s linear infinite;
+  }
+  @keyframes r { to { transform: rotate(360deg); } }
+  #bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden;
+         flex: 1; min-width: 8rem; }
+  #bar div { height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+  #msg { margin-top: .9rem; font-size: .9rem; }
+  #msg.err { color: #dc2626; }
+  #msg.ok { color: var(--ok); }
+  footer { margin-top: 2rem; color: var(--muted); font-size: .8rem; text-align: center; max-width: 40rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="pill">splitting</span> headache</h1>
+  <p>Feed it one giant PDF with a table of contents. Get back every document
+     as its own file, in folders that mirror the index, each named with its
+     page range in the original.</p>
+</header>
+
+<div class="card">
+  <div id="drop">
+    <span class="big">💊</span>
+    <strong>Drop your PDF here</strong> or click to choose a file<br>
+    <span style="font-size:.85rem">Bundles with bookmarks or a printed index — even 1000+ documents.</span>
+    <input type="file" id="file" accept="application/pdf,.pdf" class="hidden">
+  </div>
+
+  <div id="busyAnalyze" class="hidden" style="text-align:center; padding:2.5rem 0; color:var(--muted)">
+    <span class="spin" style="border-color:var(--line); border-top-color:var(--accent); display:inline-block"></span>
+    &nbsp; <span id="busyText">Reading the table of contents…</span>
+  </div>
+
+  <div id="result" class="hidden">
+    <div class="stats">
+      <span class="filename" id="fname"></span>
+      <span><b id="npages"></b> pages</span>
+      <span><b id="ndocs"></b> documents</span>
+      <span><b id="nfolders"></b> folders</span>
+    </div>
+    <div class="controls">
+      <span class="seg hidden" id="srcSeg">
+        <button data-src="bookmarks">PDF bookmarks</button>
+        <button data-src="index">Printed index</button>
+      </span>
+      <span class="offset hidden" id="offsetBox">
+        page offset <input type="number" id="offset" step="1">
+        <span title="Printed page 1 of the index sits at this PDF page + 1. Adjust if the page ranges below look shifted.">ⓘ</span>
+      </span>
+    </div>
+    <div id="tree"></div>
+    <div class="row">
+      <button class="btn" id="split">Split &amp; download zip</button>
+      <button class="ghost" id="reset">Start over</button>
+      <span id="bar" class="hidden"><div></div></span>
+    </div>
+    <div id="msg"></div>
+  </div>
+</div>
+
+<footer>Everything happens inside your browser — the PDF is never uploaded
+  anywhere, so it's safe to use with confidential documents. Your download
+  will be a zip; extract it to get the folders.</footer>
+
+<script src="vendor/pdf.min.js"></script>
+<script src="vendor/pdf.worker.min.js"></script>
+<script src="vendor/pdf-lib.min.js"></script>
+<script src="vendor/fflate.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

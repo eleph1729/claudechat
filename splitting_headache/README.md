@@ -5,6 +5,18 @@ with 1000+ documents — and get back every document as its own file, arranged
 in folders that mirror the table of contents, each filename cross-referenced
 to its page range in the original.
 
+## Two ways to run it
+
+**Browser-only (shareable)** — `docs/` contains a version that runs entirely
+in the browser with no installation: JavaScript ports of the same TOC parser
+and splitter (pdf.js + pdf-lib + fflate). Host `docs/` on any static host
+(GitHub Pages: *Settings → Pages → deploy from branch → folder `/docs`*) and
+share the URL, or send someone the single self-contained file
+`docs/standalone.html` — double-clicking it works offline. Either way the
+PDF never leaves the user's computer.
+
+**Python app (this package)** — richer for local/scripted use:
+
 ## Quick start
 
 ```bash
