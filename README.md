@@ -1,3 +1,12 @@
+# This repo
+
+Two independent projects live here:
+
+- **[Splitting Headache](splitting_headache/README.md)** — a local web app
+  that splits a long indexed PDF (court bundle, board pack) into nested
+  folders of individual documents named with their page ranges.
+- **Panel Bot** (below) — a chatbot that listens to a live panel discussion.
+
 # Panel Bot
 
 A chatbot that listens to a live panel discussion and decides *when* — and
