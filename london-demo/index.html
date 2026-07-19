@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>London Walk/Drive — OpenStreetMap proof of concept</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0e1320; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  #overlay {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(10, 14, 24, 0.82); color: #e8ecf4; z-index: 10; text-align: center;
+    backdrop-filter: blur(3px);
+  }
+  #overlay .card { max-width: 34rem; padding: 2rem 2.5rem; }
+  #overlay h1 { font-size: 1.6rem; margin: 0 0 0.4rem; font-weight: 650; }
+  #overlay .sub { color: #9fb0c8; margin-bottom: 1.4rem; }
+  #overlay .keys { text-align: left; display: inline-block; margin: 0 auto 1.2rem; color: #c9d4e4; line-height: 1.75; }
+  #overlay .keys b { display: inline-block; min-width: 6.5rem; color: #fff; font-weight: 600; }
+  #status { color: #8fd0ff; min-height: 1.4em; margin-bottom: 1rem; }
+  #error { color: #ff9d9d; white-space: pre-wrap; text-align: left; font-size: 0.85rem; display: none; margin-top: 1rem; }
+  #start {
+    display: none; font-size: 1.05rem; padding: 0.7rem 2.2rem; border-radius: 8px; border: 0;
+    background: #3d7bfd; color: #fff; cursor: pointer; font-weight: 600;
+  }
+  #start:hover { background: #5590ff; }
+
+  .hud { position: fixed; z-index: 5; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.7); font-size: 0.8rem; pointer-events: none; }
+  #hud-left { left: 12px; bottom: 10px; }
+  #hud-left .mode { font-size: 1rem; font-weight: 700; letter-spacing: 0.06em; }
+  #attribution { right: 12px; bottom: 10px; opacity: 0.85; pointer-events: auto; }
+  #attribution a { color: #bcd6ff; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="hud-left" class="hud" hidden>
+  <div class="mode" id="hud-mode">WALK</div>
+  <div id="hud-info"></div>
+</div>
+<div id="attribution" class="hud">
+  Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors (ODbL)
+</div>
+
+<div id="overlay">
+  <div class="card">
+    <h1>Central London — Westminster</h1>
+    <div class="sub">Real OpenStreetMap geometry, extruded in three.js</div>
+    <div class="keys">
+      <div><b>Mouse</b> look around</div>
+      <div><b>W A S D</b> move / steer</div>
+      <div><b>Shift</b> sprint (on foot)</div>
+      <div><b>C</b> toggle walk / drive</div>
+      <div><b>R</b> return to start (Parliament Square)</div>
+      <div><b>Esc</b> release mouse</div>
+    </div>
+    <div id="status">Loading…</div>
+    <button id="start">Click to explore</button>
+    <div id="error"></div>
+  </div>
+</div>
+
+<script>
+  // ES modules and fetch() don't work from file:// — catch that early with a plain script.
+  if (location.protocol === 'file:') {
+    document.getElementById('status').textContent = '';
+    var e = document.getElementById('error');
+    e.style.display = 'block';
+    e.textContent = 'This page must be served over HTTP (ES modules are blocked on file://).\n\nFrom the london-demo directory run:\n\n  python3 -m http.server 8000\n\nthen open http://localhost:8000/';
+  }
+</script>
+<script type="importmap">
+  { "imports": { "three": "./vendor/three.module.js" } }
+</script>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
