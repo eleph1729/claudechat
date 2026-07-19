@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Case Citator — Find Case Law</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<main>
+  <header>
+    <h1>Case Citator</h1>
+    <p class="tagline">Citation status for judgments in The National Archives’
+      <a href="https://caselaw.nationalarchives.gov.uk/" target="_blank" rel="noopener">Find Case Law</a> corpus</p>
+  </header>
+
+  <form id="search-form" autocomplete="off">
+    <div class="fields">
+      <label>
+        <span>Neutral citation</span>
+        <input id="citation" type="text" placeholder="e.g. [2015] EWCA Civ 123" required spellcheck="false">
+      </label>
+      <label>
+        <span>Case name <em>(optional, improves search)</em></span>
+        <input id="case-name" type="text" placeholder="e.g. Smith v Jones" spellcheck="false">
+      </label>
+    </div>
+    <div class="actions">
+      <button id="go" type="submit">Check status</button>
+      <label class="refresh"><input id="refresh" type="checkbox"> ignore cached result</label>
+    </div>
+  </form>
+
+  <section id="progress" hidden>
+    <div class="spinner" aria-hidden="true"></div>
+    <p id="progress-text">Working…</p>
+  </section>
+
+  <section id="error" hidden></section>
+
+  <section id="result" hidden>
+    <div id="banner">
+      <div id="banner-status"></div>
+      <div id="banner-case"></div>
+    </div>
+    <div id="meta"></div>
+    <div id="counts"></div>
+    <div id="cards"></div>
+    <p id="coverage" class="coverage"></p>
+  </section>
+
+  <footer>
+    <p>AI-assisted research aid — not legal advice. Treatments are machine-classified;
+       always read the quoted passages and the judgments themselves.
+       Contains information licensed under the terms of a Find Case Law
+       computational-analysis licence.</p>
+  </footer>
+</main>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
