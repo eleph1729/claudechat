@@ -7,7 +7,7 @@
 <style>
   :root {
     --bg: #0b0d12; --panel: #151922; --panel2: #1c2230; --ink: #f2f4f8; --dim: #9aa3b5;
-    --faint: #5d6678; --accent: #d97757; --live: #3ecf8e; --cached: #f2b84b; --bad: #ff6b6b;
+    --faint: #5d6678; --accent: #d97757; --live: #3ecf8e; --warn: #f2b84b; --bad: #ff6b6b;
     --good: #3ecf8e; --line: #2a3142;
   }
   * { box-sizing: border-box; }
@@ -23,14 +23,14 @@
   .qnum { font-weight: 700; }
   .domain { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .spacer { flex: 1; }
+  .len { font-weight: 800; padding: .15em .6em; border-radius: 8px; background: var(--panel2);
+    color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .len.long { background: #4a2a12; color: var(--warn); }
   .timer { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 4.5em; text-align: right; }
   .timer.stopped { color: var(--bad); }
-  .score { display: flex; gap: .8vw; align-items: center; font-weight: 700; }
+  .score { display: flex; gap: .8vw; align-items: center; font-weight: 700; white-space: nowrap; }
   .score span.n { font-variant-numeric: tabular-nums; font-size: 1.15em; }
   .score .h { color: #8ab4ff; } .score .a { color: var(--accent); }
-  .chip { font-size: .7em; padding: .25em .7em; border-radius: 99px; font-weight: 700;
-    letter-spacing: .04em; text-transform: uppercase; }
-  .chip.off { background: #33281a; color: var(--cached); }
 
   /* main */
   .main { flex: 1; display: grid; grid-template-columns: 57fr 43fr; min-height: 0; }
@@ -39,23 +39,27 @@
   .media img, .media video { width: 100%; height: 100%; object-fit: contain; }
   .media .kind { position: absolute; top: 1.4vh; left: 1.2vw; font-size: 1vw; color: var(--dim);
     background: #000a; padding: .3em .7em; border-radius: 6px; }
+  .countdown { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 2vh; background: #000d; text-align: center; }
+  .countdown .n { font-size: 11vw; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+  .countdown .t { font-size: 1.6vw; color: var(--dim); }
+  .countdown .l { font-size: 2.2vw; font-weight: 800; }
+  .countdown .l.long { color: var(--warn); }
+  .loading { display: flex; flex-direction: column; align-items: center; gap: 2vh; font-size: 1.6vw; color: var(--dim);
+    text-align: center; padding: 0 4vw; }
   .side { padding: 2vh 1.6vw; overflow-y: auto; display: flex; flex-direction: column; gap: 1.6vh; }
   .prompt { font-size: 2.05vw; line-height: 1.3; font-weight: 600; }
   .side.dense .prompt { font-size: 1.55vw; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
-    padding: 1.4vh 1.2vw; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1.4vh 1.2vw; }
   .card h3 { margin: 0 0 .8vh; font-size: 1.05vw; text-transform: uppercase; letter-spacing: .08em;
     color: var(--dim); display: flex; align-items: center; gap: .6vw; flex-wrap: wrap; }
   .card .body { font-size: 1.45vw; line-height: 1.38; white-space: pre-wrap; }
   .side.dense .card .body { font-size: 1.15vw; }
   .badge { font-size: .85em; padding: .15em .6em; border-radius: 6px; font-weight: 800; letter-spacing: .06em; }
-  .badge.live { background: #12382a; color: var(--live); }
-  .badge.cached { background: #3a2d12; color: var(--cached); }
-  .badge.wait { background: var(--panel2); color: var(--dim); }
   .badge.pass { background: #12382a; color: var(--good); }
   .badge.fail { background: #3d1717; color: var(--bad); }
+  .badge.wait { background: var(--panel2); color: var(--dim); }
   .meta { color: var(--faint); font-size: .8vw; margin-top: .8vh; }
-  .note { color: var(--cached); font-size: .85vw; margin-top: .6vh; }
   .thinking { margin-top: 1vh; padding-top: 1vh; border-top: 1px dashed var(--line);
     color: var(--dim); font-size: 1vw; line-height: 1.4; white-space: pre-wrap; max-height: 28vh; overflow: auto; }
   .claude-card { border-color: #5a3a2c; }
@@ -64,12 +68,11 @@
   ul.rubric li { display: flex; gap: .7vw; padding: .55vh 0; border-top: 1px solid var(--line); align-items: baseline; }
   .mark { font-weight: 800; min-width: 4.6em; font-size: .85em; }
   .mark.y { color: var(--good); } .mark.n { color: var(--bad); } .mark.q { color: var(--faint); }
-  .sub { border-top: 1px solid var(--line); padding-top: .8vh; margin-top: .8vh; font-size: 1.1vw; }
-  .sub .who { font-weight: 700; } .sub .txt { white-space: pre-wrap; color: var(--ink); margin: .3vh 0; }
   .spinner { display: inline-block; width: .9em; height: .9em; border: .16em solid var(--faint);
     border-top-color: var(--accent); border-radius: 50%; animation: spin 0.9s linear infinite; vertical-align: -0.1em; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .waiting { display: flex; gap: .8vw; align-items: center; font-size: 1.4vw; color: var(--dim); }
+  .err { color: var(--bad); font-size: 1.2vw; white-space: pre-wrap; }
 
   .pens { position: absolute; left: 50%; top: 2vh; transform: translateX(-50%); background: var(--bad);
     color: #fff; font-weight: 900; font-size: 2.2vw; padding: .5vh 2vw; border-radius: 10px;
@@ -79,27 +82,18 @@
   .award.h { background: #1b2c4f; color: #8ab4ff; } .award.a { background: #4a2a1e; color: var(--accent); }
   .award.s { background: var(--panel2); color: var(--dim); }
 
-  /* bottom */
   .bottom { display: flex; gap: 1.5vw; padding: .8vh 1.6vw; border-top: 1px solid var(--line);
     font-size: .85vw; color: var(--faint); align-items: center; }
   .credit { flex: 1; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .cam { color: var(--dim); }
+  .status { color: var(--faint); white-space: nowrap; }
   kbd { font-family: inherit; border: 1px solid var(--faint); border-radius: 4px; padding: 0 .35em; }
 
-  /* title & end */
   .center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
     text-align: center; gap: 2.4vh; padding: 4vh 6vw; }
   .center h1 { font-size: 4.6vw; margin: 0; letter-spacing: -.01em; }
   .center h1 em { color: var(--accent); font-style: normal; }
   .center .lede { font-size: 1.7vw; color: var(--dim); max-width: 60vw; line-height: 1.4; }
-  .center .qr { display: flex; gap: 2vw; align-items: center; background: var(--panel); padding: 2vh 2vw;
-    border-radius: 14px; border: 1px solid var(--line); }
-  .center .qr img { width: 15vh; height: 15vh; border-radius: 6px; background: #fff; }
-  .center .qr div { text-align: left; font-size: 1.3vw; }
-  .center .qr code { color: var(--accent); font-size: 1.1vw; }
   .center .hint { color: var(--faint); font-size: 1.2vw; }
-  .final { display: flex; gap: 6vw; font-size: 2.4vw; font-weight: 800; }
-  .final .big { font-size: 7vw; display: block; font-variant-numeric: tabular-nums; }
   .src { color: var(--faint); font-size: .95vw; max-width: 70vw; }
 
   .help { position: fixed; inset: 0; background: #000c; display: flex; align-items: center; justify-content: center; }
@@ -117,23 +111,8 @@
     <h1>Humanity's <em>Sixth Sense</em></h1>
     <div class="lede">Quick visual judgments that are obvious to people at a glance, but never stated
       in the scene. Write your answer, then see how Claude does on the same question.</div>
-    <div class="qr"><img id="qr-title" alt="QR code for the camera page">
-      <div>Grade your handwritten answer:<br>open <code class="cam-url"></code><br>on your phone</div></div>
     <div class="hint">Press <kbd>Space</kbd> to start · <kbd>?</kbd> for keys</div>
-    <div class="src">Questions from the HSS benchmark (Scale AI &amp; Elorian, arXiv 2610.08966; dataset
-      ScaleAI/HSS). Media are shown with the credits the dataset provides.</div>
-  </div>
-</div>
-
-<div id="end" class="screen hidden">
-  <div class="center">
-    <h1>Final score</h1>
-    <div class="final">
-      <div style="color:#8ab4ff">Humans<span class="big" id="end-h">0</span></div>
-      <div style="color:var(--accent)">Claude<span class="big" id="end-a">0</span></div>
-    </div>
-    <div class="lede" id="end-played"></div>
-    <div class="hint"><kbd>←</kbd> back · <kbd>Shift</kbd>+<kbd>R</kbd> restart</div>
+    <div class="src" id="title-src"></div>
   </div>
 </div>
 
@@ -142,7 +121,7 @@
     <span class="qnum" id="qnum"></span>
     <span class="domain" id="domain"></span>
     <span class="spacer"></span>
-    <span class="chip off hidden" id="offline-chip">offline</span>
+    <span class="len hidden" id="len"></span>
     <span class="timer" id="timer">0:00</span>
     <span class="score"><span class="h">Humans <span class="n" id="sh">0</span></span>
       <span style="color:var(--faint)">·</span>
@@ -159,7 +138,7 @@
   </div>
   <div class="bottom">
     <span class="credit" id="credit"></span>
-    <span class="cam" id="cam"></span>
+    <span class="status" id="cstatus"></span>
     <span><kbd>?</kbd> keys</span>
   </div>
   <div class="pens hidden" id="pens">PENS DOWN</div>
@@ -167,16 +146,15 @@
 
 <div class="help hidden" id="help"><div class="box">
   <h2>Host keys</h2>
-  <kbd>Space</kbd> next question &nbsp; <kbd>←</kbd> previous<br>
+  <kbd>Space</kbd> next random question &nbsp; <kbd>←</kbd> previous<br>
+  <kbd>S</kbd> skip (e.g. a video that's too long)<br>
+  <kbd>V</kbd> play the video now (skip the countdown)<br>
   <kbd>P</kbd> pens down (stops the clock)<br>
-  <kbd>C</kbd> reveal Claude (press again to stop waiting for the live call)<br>
+  <kbd>C</kbd> reveal Claude's answer (press again to retry after an error)<br>
   <kbd>R</kbd> reveal reference answer + rubric<br>
   <kbd>H</kbd> point to humans &nbsp; <kbd>A</kbd> point to Claude (press again to undo)<br>
-  <kbd>S</kbd> skip question &nbsp; <kbd>T</kbd> Claude's reasoning summary<br>
-  <kbd>F</kbd> full screen &nbsp; <kbd>Shift</kbd>+<kbd>R</kbd> restart &nbsp; <kbd>?</kbd> close
-  <div style="margin-top:1.5vh;display:flex;gap:1.5vw;align-items:center">
-    <img id="qr-help" style="width:12vh;height:12vh;background:#fff;border-radius:6px" alt="">
-    <span style="font-size:1.1vw;color:var(--dim)">Phones: <code class="cam-url"></code></span></div>
+  <kbd>T</kbd> Claude's reasoning summary &nbsp; <kbd>F</kbd> full screen<br>
+  <kbd>Shift</kbd>+<kbd>R</kbd> restart &nbsp; <kbd>?</kbd> close
 </div></div>
 <div class="toast hidden" id="toast"></div>
 
@@ -184,15 +162,17 @@
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let S = null, clockOffset = 0, mediaKey = null, showThinking = false, lastHTML = {};
+const serverNow = () => (Date.now() + clockOffset) / 1000;
 
 function setHTML(id, html) { if (lastHTML[id] !== html) { $(id).innerHTML = html; lastHTML[id] = html; } }
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.remove("hidden");
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add("hidden"), 2500); }
+function fmt(sec) { sec = Math.max(0, Math.round(sec)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`; }
 
 async function poll() {
   try {
-    const r = await fetch("/api/state", {cache: "no-store"});
-    const s = await r.json(); clockOffset = s.now * 1000 - Date.now(); render(s);
+    const s = await (await fetch("/api/state", {cache: "no-store"})).json();
+    clockOffset = s.now * 1000 - Date.now(); render(s);
   } catch (e) { /* server restarting; keep last frame */ }
 }
 async function act(action) {
@@ -203,35 +183,41 @@ async function act(action) {
   } catch (e) { toast("Server not reachable"); }
 }
 
-function fmt(sec) { sec = Math.max(0, Math.floor(sec)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`; }
-
 function render(s) {
   S = s;
-  document.querySelectorAll(".cam-url").forEach((e) => e.textContent = s.camera_url);
-  if (!$("qr-title").src) { $("qr-title").src = "/api/qr.png"; $("qr-help").src = "/api/qr.png"; }
-  $("title").classList.toggle("hidden", s.index !== -1);
-  $("end").classList.toggle("hidden", s.index !== s.total);
+  $("title-src").textContent = `Questions drawn at random from the ${s.dataset_size} tasks of the HSS benchmark ` +
+    `(Scale AI & Elorian, arXiv 2610.08966; dataset ScaleAI/HSS). Media are shown with the credits the dataset provides.`;
+  $("title").classList.toggle("hidden", !!s.question);
   $("quiz").classList.toggle("hidden", !s.question);
-  if (s.index === s.total) {
-    $("end-h").textContent = s.scores.human; $("end-a").textContent = s.scores.ai;
-    $("end-played").textContent = `${s.scores.played} questions played`;
-  }
   const q = s.question; if (!q) { mediaKey = null; return; }
 
-  $("qnum").textContent = `Q${s.index + 1} / ${s.total}`;
+  $("qnum").textContent = `Q${q.number}`;
   $("domain").textContent = `${q.domain} › ${q.subdomain}`;
   $("sh").textContent = s.scores.human; $("sa").textContent = s.scores.ai;
-  $("offline-chip").classList.toggle("hidden", !s.offline);
   $("pens").classList.toggle("hidden", !q.pens_down_at || q.claude);
-  $("credit").textContent = q.credit;
-  $("cam").textContent = s.offline ? "" : `📷 ${q.camera_count} photo answer${q.camera_count === 1 ? "" : "s"} · ${s.camera_url}`;
+  $("credit").textContent = q.status === "ready" ? q.credit : "";
+  const isLong = q.kind === "video" && q.duration > s.long_video;
+  $("len").classList.toggle("hidden", q.kind !== "video" || !q.duration);
+  $("len").classList.toggle("long", isLong);
+  $("len").textContent = `▶ video ${fmt(q.duration || 0)}`;
+  $("cstatus").textContent = q.claude_status === "pending" ? `Claude is thinking… ${fmt(q.claude_elapsed)}`
+    : q.claude_status === "done" ? "Claude has answered" : q.claude_status === "error" ? "Claude's call failed" : "";
 
-  if (mediaKey !== q.task_id) {
-    mediaKey = q.task_id;
-    $("media").innerHTML = (q.kind === "video"
-      ? `<video src="${esc(q.media_url)}" autoplay muted loop playsinline></video>`
-      : `<img src="${esc(q.media_url)}" alt="">`) +
-      `<span class="kind">${q.kind === "video" ? `video · ${q.duration ? q.duration.toFixed(0) + "s · " : ""}no audio, looping` : "image"}</span>`;
+  const key = `${q.number}:${q.status}`;
+  if (mediaKey !== key) {
+    mediaKey = key;
+    if (q.status === "loading") {
+      $("media").innerHTML = `<div class="loading"><span class="spinner"></span>Loading the ${esc(q.kind)}…</div>`;
+    } else if (q.status === "error") {
+      $("media").innerHTML = `<div class="loading"><div class="err">Couldn't load this ${esc(q.kind)}:\n${esc(q.error)}</div>Press <kbd>S</kbd> for another question</div>`;
+    } else if (q.kind === "video") {
+      $("media").innerHTML = `<video id="vid" src="${esc(q.media_url)}" muted loop playsinline preload="auto"></video>
+        <span class="kind">video · ${fmt(q.duration || 0)} · no audio, looping</span>
+        <div class="countdown hidden" id="cd"><div class="t">Read the question. The video starts in</div>
+          <div class="n" id="cdn"></div><div class="l ${isLong ? "long" : ""}">▶ ${fmt(q.duration || 0)} long${isLong ? " · press S to skip" : ""}</div></div>`;
+    } else {
+      $("media").innerHTML = `<img src="${esc(q.media_url)}" alt=""><span class="kind">image</span>`;
+    }
   }
   setHTML("prompt", esc(q.prompt));
   $("side").classList.toggle("dense", !!(q.claude && q.ref));
@@ -241,39 +227,32 @@ function render(s) {
   if (q.ai) aw += `<span class="award a">+1 Claude</span>`;
   if (q.skipped) aw += `<span class="award s">skipped</span>`;
   setHTML("awards", aw);
-
   setHTML("claude", q.claude ? claudeCard(q, s) : "");
   setHTML("ref", q.ref ? refCard(q) : "");
+  tick();
 }
 
 function claudeCard(q, s) {
-  if (!q.source) {
-    return `<div class="card claude-card"><h3>Claude <span class="badge wait">LIVE · thinking</span></h3>
-      <div class="waiting"><span class="spinner"></span> Claude is still working on it
-      (${fmt(q.live_elapsed || 0)} so far)${q.cached_available ? ` · cached answer in ${Math.ceil(q.live_grace_left)}s, or press C` : ""}</div></div>`;
+  if (q.answer_error) {
+    return `<div class="card claude-card"><h3>Claude</h3><div class="err">${esc(q.answer_error)}</div>
+      <div class="meta">Press C to try again.</div></div>`;
   }
-  if (q.source === "none") {
-    return `<div class="card claude-card"><h3>Claude</h3><div class="body" style="color:var(--bad)">${esc(q.answer_error)}</div></div>`;
+  if (!q.answer) {
+    return `<div class="card claude-card"><h3>Claude <span class="badge wait">thinking</span></h3>
+      <div class="waiting"><span class="spinner"></span> Claude is still working on it (${fmt(q.claude_elapsed || 0)} so far)</div></div>`;
   }
   const m = q.answer_meta || {};
-  const badge = q.source === "live" ? `<span class="badge live">● LIVE</span>` : `<span class="badge cached">CACHED</span>`;
   const verdict = q.ref && q.judgment ? `<span class="badge ${q.judgment.passed ? "pass" : "fail"}">${q.judgment.passed ? "PASS" : "FAIL"}</span>` : "";
-  let meta = `${esc(m.model || s.model)}${m.effort ? " · effort " + esc(m.effort) : ""}${m.latency_s != null ? ` · answered in ${m.latency_s}s` : ""}`;
-  if (q.source === "cached" && m.created) meta += ` · cached ${esc(m.created)}`;
-  let note = "";
-  if (q.source === "cached" && s.offline) note = "Offline mode: answer recorded earlier by prepare.py.";
-  else if (q.source === "cached" && q.live_error) note = `Live call failed (${esc(q.live_error)}), showing the cached answer.`;
-  else if (q.source === "cached" && q.live_status === "pending") note = "Live call still running, showing the cached answer.";
+  const meta = `${esc(m.model || s.model)}${m.effort ? " · effort " + esc(m.effort) : ""}${m.latency_s != null ? ` · answered in ${m.latency_s}s` : ""}`;
   const think = showThinking && q.thinking ? `<div class="thinking"><b>Reasoning summary</b>\n${esc(q.thinking)}</div>` : "";
-  return `<div class="card claude-card"><h3>Claude's answer ${badge} ${verdict}</h3>
-    <div class="body">${esc(q.answer)}</div><div class="meta">${meta}</div>
-    ${note ? `<div class="note">${note}</div>` : ""}${think}</div>`;
+  return `<div class="card claude-card"><h3>Claude's answer ${verdict}</h3>
+    <div class="body">${esc(q.answer)}</div><div class="meta">${meta}</div>${think}</div>`;
 }
 
 function refCard(q) {
   const verdicts = {};
   (q.judgment?.criteria || []).forEach((c) => verdicts[c.id] = c);
-  const showClaude = q.claude && q.source && q.source !== "none";
+  const showClaude = q.claude && q.answer;
   const rows = q.criteria.map((c) => {
     let mark = "";
     if (showClaude) {
@@ -283,31 +262,36 @@ function refCard(q) {
     }
     return `<li>${mark}<span>${esc(c.title)}</span></li>`;
   }).join("");
-  const subs = (q.camera || []).map((p) => {
-    let st = "";
-    if (p.status === "done") st = `<span class="badge ${p.judgment.passed ? "pass" : "fail"}">${p.judgment.passed ? "PASS" : "FAIL"}</span>
-      <span style="color:var(--faint)"> ${p.judgment.criteria.filter((c) => c.met).length}/${p.judgment.criteria.length} criteria</span>`;
-    else if (p.status === "error") st = `<span style="color:var(--bad)">couldn't grade: ${esc(p.error)}</span>`;
-    else st = `<span class="spinner"></span> ${p.status}…`;
-    return `<div class="sub"><span class="who">📷 ${esc(p.name)}</span> ${st}
-      ${p.transcription ? `<div class="txt">“${esc(p.transcription)}”</div>` : ""}</div>`;
-  }).join("");
   return `<div class="card ref-card"><h3>Reference answer</h3><div class="body">${esc(q.reference)}</div>
-    <h3 style="margin-top:1.4vh">Rubric · every criterion must be met</h3><ul class="rubric">${rows}</ul>${subs}</div>`;
+    <h3 style="margin-top:1.4vh">Rubric · every criterion must be met</h3><ul class="rubric">${rows}</ul></div>`;
 }
 
 function tick() {
-  const q = S && S.question; if (!q || !q.shown_at) return;
-  const end = q.pens_down_at ? q.pens_down_at * 1000 : Date.now() + clockOffset;
-  $("timer").textContent = fmt((end - q.shown_at * 1000) / 1000);
-  $("timer").classList.toggle("stopped", !!q.pens_down_at);
+  const q = S && S.question; if (!q) return;
+  if (q.shown_at) {
+    const end = q.pens_down_at || serverNow();
+    $("timer").textContent = fmt(end - q.shown_at);
+    $("timer").classList.toggle("stopped", !!q.pens_down_at);
+  } else { $("timer").textContent = "0:00"; }
+  const vid = $("vid"), cd = $("cd");
+  if (vid && cd && q.play_at) {
+    const left = q.play_at - serverNow();
+    if (left > 0) {
+      cd.classList.remove("hidden"); $("cdn").textContent = Math.ceil(left);
+      if (!vid.paused) vid.pause();
+      if (vid.currentTime !== 0 && vid.readyState > 0) vid.currentTime = 0;
+    } else {
+      cd.classList.add("hidden");
+      if (vid.paused && !vid.dataset.started) { vid.dataset.started = "1"; vid.play().catch(() => {}); }
+    }
+  }
 }
 
 document.addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key;
   const map = {" ": "next", "ArrowRight": "next", "PageDown": "next", "ArrowLeft": "back", "PageUp": "back",
-    "Backspace": "back", "p": "pens", "c": "claude", "s": "skip", "h": "human", "a": "ai"};
+    "Backspace": "back", "p": "pens", "c": "claude", "s": "skip", "h": "human", "a": "ai", "v": "play"};
   if (k === "R") { if (confirm("Restart the show? Scores will be cleared.")) act("restart"); return; }
   if (k === "r") { e.preventDefault(); act("ref"); return; }
   if (k === "?" || k === "/") { $("help").classList.toggle("hidden"); return; }
@@ -318,7 +302,7 @@ document.addEventListener("keydown", (e) => {
   if (action) { e.preventDefault(); act(action); }
 });
 
-poll(); setInterval(poll, 700); setInterval(tick, 250);
+poll(); setInterval(poll, 700); setInterval(tick, 200);
 </script>
 </body>
 </html>

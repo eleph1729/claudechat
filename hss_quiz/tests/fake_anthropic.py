@@ -1,7 +1,7 @@
 """A stand-in for the Messages API, for testing without a key or network.
 
     python tests/fake_anthropic.py 8765 /tmp/requests.jsonl
-    ANTHROPIC_BASE_URL=http://127.0.0.1:8765 ANTHROPIC_API_KEY=fake python prepare.py ...
+    ANTHROPIC_BASE_URL=http://127.0.0.1:8765 ANTHROPIC_API_KEY=fake python server.py ...
 
 It streams SSE events in the API's wire format and logs a summary of every
 request (model, effort, system prompt, image/frame counts, beta headers), so
@@ -63,8 +63,6 @@ def reply_for(body, s):
                 met = bool(nums) and all(n in cand for n in nums)
             crits.append({"id": cid, "met": met, "justification": "fake judge"})
         return "", json.dumps({"criteria": crits, "overall_comment": "fake"})
-    if "handwritten" in s["last_text"]:
-        return "", "There are 4 circles"
     if s["frame_labels"]:
         return "Looking at the frames in order...", "The bar moves right to left."
     return "Counting the shapes...", "There are 4 circles."
@@ -80,7 +78,7 @@ async def messages(req: Request):
     s = summarize(body, req.headers)
     with open(LOG, "a") as fh:
         fh.write(json.dumps(s) + "\n")
-    is_answer = not s["system"] and "handwritten" not in s["last_text"]
+    is_answer = not s["system"]
     if is_answer and CONTROL["delay"]:
         await asyncio.sleep(CONTROL["delay"])
     if is_answer and CONTROL["fail"]:

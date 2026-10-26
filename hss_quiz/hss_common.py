@@ -1,4 +1,4 @@
-"""Shared pieces for the HSS quiz demo: dataset rows, media prep, Claude calls.
+"""Shared pieces for the HSS quiz demo: dataset access, media prep, Claude calls.
 
 The answering and grading prompts follow the HSS paper's evaluation protocol
 (arXiv 2610.08966, Appendix C.6), as published in the authors' harness
@@ -34,13 +34,15 @@ ANSWER_MODEL = "claude-opus-5-5"
 ANSWER_EFFORT = "xhigh"          # what the paper's registry uses for Claude Opus 5.5
 JUDGE_MODEL = "claude-opus-5"    # the paper's headline judge
 JUDGE_EFFORT = "high"
-READER_MODEL = "claude-opus-5-5"  # reads handwritten answers on the /camera page
 
 VIDEO_FPS = 2.0
 VIDEO_MAX_FRAMES = 500
 FRAME_MAX_SIDE = 768
 IMAGE_MAX_SIDE = 4096
 IMAGE_MAX_BYTES = 4_500_000
+# The API caps a request at 32 MB, and base64 adds a third: keep a video's frames
+# under ~20 MB raw, re-encoding them smaller only when they would not fit.
+FRAMES_MAX_TOTAL_BYTES = 20_000_000
 
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
@@ -102,18 +104,6 @@ Grade each criterion. Output the JSON object described in the system prompt, wit
 {num_criteria} entries in "criteria", one per criterion id, in the same order.\
 """
 
-# Not from the paper: the /camera page's handwriting reader.
-HANDWRITING_PROMPT = (
-    "This photo shows a quiz contestant's handwritten answer to the question below. "
-    "Transcribe exactly what is written, word for word, keeping the contestant's wording "
-    "and spelling. Do not answer the question yourself, correct the answer, or add anything. "
-    "If part of it is illegible, write [illegible] in its place. If the photo shows no "
-    "handwritten answer, reply with exactly: [no answer found]\n\n"
-    "Reply with the transcription only.\n\n"
-    "Question the contestant was answering: {prompt}"
-)
-
-
 # --------------------------------------------------------------------------
 # Tasks
 # --------------------------------------------------------------------------
@@ -129,19 +119,12 @@ class Task:
     criteria: List[Dict[str, str]]
     credit: str = ""
     duration: Optional[float] = None
-    local_media: str = ""    # relative to DATA_DIR once downloaded
+    local_path: str = ""     # set once the media is downloaded
     extra: Dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {k: getattr(self, k) for k in self.__dataclass_fields__}
-
-    @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "Task":
-        return cls(**{k: d[k] for k in cls.__dataclass_fields__ if k in d})
 
     @property
     def media_file(self) -> Path:
-        return DATA_DIR / self.local_media
+        return Path(self.local_path)
 
 
 def parse_criteria(raw: Any) -> List[Dict[str, str]]:
@@ -223,12 +206,10 @@ def require_tool(name: str) -> str:
     return path
 
 
-def probe_duration(source: str, headers: Optional[str] = None, timeout: float = 60) -> float:
-    """Duration in seconds of a local file or URL (ffprobe reads only what it needs)."""
-    cmd = [require_tool("ffprobe"), "-v", "error"]
-    if headers:
-        cmd += ["-headers", headers]
-    cmd += ["-show_entries", "format=duration:stream=duration", "-of", "json", source]
+def probe_duration(source: str, timeout: float = 60) -> float:
+    """Duration in seconds of a video file."""
+    cmd = [require_tool("ffprobe"), "-v", "error", "-show_entries",
+           "format=duration:stream=duration", "-of", "json", source]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip()[:300] or "ffprobe failed")
@@ -299,36 +280,33 @@ _MEDIA_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"
 
 
 def image_block(path: Path, max_side: int = IMAGE_MAX_SIDE, max_bytes: int = IMAGE_MAX_BYTES,
-                exif_rotate: bool = False) -> Dict[str, Any]:
+                min_side: int = 512) -> Dict[str, Any]:
     """Base64 image block at native resolution, downscaled only if it is too big."""
     raw = path.read_bytes()
     media_type = _MEDIA_TYPES.get(path.suffix.lower())
-    needs_work = exif_rotate or media_type is None or len(raw) > max_bytes
+    needs_work = media_type is None or len(raw) > max_bytes
     if not needs_work:
         from PIL import Image
         with Image.open(io.BytesIO(raw)) as im:
             needs_work = max(im.size) > max_side
     if needs_work:
-        raw, media_type = _reencode(raw, max_side, max_bytes, exif_rotate)
+        raw, media_type = _reencode(raw, max_side, max_bytes, min_side)
     return {"type": "image", "source": {"type": "base64", "media_type": media_type,
                                         "data": base64.standard_b64encode(raw).decode()}}
 
 
-def _reencode(raw: bytes, max_side: int, max_bytes: int, exif_rotate: bool) -> tuple[bytes, str]:
-    from PIL import Image, ImageOps
-    im = Image.open(io.BytesIO(raw))
-    if exif_rotate:
-        im = ImageOps.exif_transpose(im)
-    im = im.convert("RGB")
+def _reencode(raw: bytes, max_side: int, max_bytes: int, min_side: int) -> tuple[bytes, str]:
+    from PIL import Image
+    im = Image.open(io.BytesIO(raw)).convert("RGB")
     side = min(max_side, max(im.size))
     while True:
         scaled = im.copy()
         scaled.thumbnail((side, side), Image.LANCZOS)
         buf = io.BytesIO()
-        scaled.save(buf, "JPEG", quality=90)
-        if buf.tell() <= max_bytes or side <= 512:
+        scaled.save(buf, "JPEG", quality=85)
+        if buf.tell() <= max_bytes or side <= min_side:
             return buf.getvalue(), "image/jpeg"
-        side = int(side * 0.8)
+        side = max(min_side, int(side * 0.8))
 
 
 def build_answer_content(task: Task, frames_root: Path) -> List[Dict[str, Any]]:
@@ -337,9 +315,12 @@ def build_answer_content(task: Task, frames_root: Path) -> List[Dict[str, Any]]:
         frames, ts, fps, duration = sample_frames(task.media_file, frames_root / task.task_id)
         content: List[Dict[str, Any]] = [{"type": "text", "text": VIDEO_FRAMES_PREAMBLE.format(
             num_frames=len(frames), fps=fps, duration=duration, timestamps=format_timestamps(ts))}]
+        total = sum(p.stat().st_size for p in frames)
+        per_frame = (FRAMES_MAX_TOTAL_BYTES // len(frames)
+                     if total > FRAMES_MAX_TOTAL_BYTES else IMAGE_MAX_BYTES)
         for path, t in zip(frames, ts):
             content.append({"type": "text", "text": f"[frame t={t:.2f}s]"})
-            content.append(image_block(path))
+            content.append(image_block(path, max_bytes=per_frame, min_side=128))
     else:
         content = [{"type": "text", "text": IMAGE_PREAMBLE}, image_block(task.media_file)]
     content.append({"type": "text", "text": f"Question: {task.prompt}"})
@@ -459,12 +440,6 @@ def extract_json_object(text: str) -> Dict[str, Any]:
     return obj
 
 
-def read_handwriting(task: Task, photo: Path, model: str = READER_MODEL) -> str:
-    content = [image_block(photo, max_side=2048, exif_rotate=True),
-               {"type": "text", "text": HANDWRITING_PROMPT.format(prompt=task.prompt)}]
-    return _call(model, "medium", [{"role": "user", "content": content}], max_tokens=4096)["text"]
-
-
 # --------------------------------------------------------------------------
 # Files
 # --------------------------------------------------------------------------
@@ -475,8 +450,91 @@ def load_json(path: Path, default: Any) -> Any:
         return default
 
 
-def save_json(path: Path, obj: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(obj, indent=2, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(path)
+# --------------------------------------------------------------------------
+# Dataset access: the Hugging Face Hub, or a local copy laid out like it
+# --------------------------------------------------------------------------
+CREDIT_OVERRIDES = ROOT / "credits.json"
+
+
+class Dataset:
+    """`ScaleAI/HSS` on the Hub (media fetched one file at a time, into the
+    Hugging Face cache), or a local directory with the same layout."""
+
+    def __init__(self, spec: str):
+        self.spec = spec
+        path = Path(spec).expanduser()
+        self.local = path if path.is_dir() else None
+
+    def label(self) -> str:
+        return str(self.local) if self.local else f"huggingface.co/datasets/{self.spec}"
+
+    def fetch(self, rel: str) -> Path:
+        if self.local:
+            return self.local / rel
+        from huggingface_hub import hf_hub_download
+        return Path(hf_hub_download(self.spec, rel, repo_type="dataset"))
+
+    def files(self) -> List[str]:
+        if self.local:
+            return [str(p.relative_to(self.local)) for p in self.local.rglob("*") if p.is_file()]
+        from huggingface_hub import list_repo_files
+        return list_repo_files(self.spec, repo_type="dataset")
+
+    def load_tasks(self) -> List[Task]:
+        """Every task with a reference answer and rubric, credits attached."""
+        with open(self.fetch("data/test.jsonl"), encoding="utf-8") as fh:
+            rows = [json.loads(line) for line in fh if line.strip()]
+        tasks = [task_from_row(r) for r in rows]
+        tasks = [t for t in tasks if t.criteria and t.golden_response]
+        index = self.credit_index()
+        for t in tasks:
+            t.credit = (index.get(t.task_id) or index.get(t.media_path)
+                        or index.get(Path(t.media_path).name)
+                        or credit_from_fields(t.extra) or default_credit(t))
+        return tasks
+
+    def credit_index(self) -> Dict[str, str]:
+        """Credit strings keyed by task_id / media_path / file name, from any
+        credits-like table in the dataset repo, plus the local credits.json."""
+        index: Dict[str, str] = {}
+        hits = [f for f in self.files()
+                if any(w in Path(f).name.lower() for w in ("credit", "attribution", "licen", "source"))
+                and Path(f).suffix.lower() in {".csv", ".tsv", ".json", ".jsonl"}
+                and not f.startswith("media/")]
+        for rel in hits:
+            try:
+                rows = _read_table(self.fetch(rel))
+            except Exception as exc:  # noqa: BLE001 - a bad side file must not stop the show
+                print(f"  (could not read {rel}: {exc})")
+                continue
+            print(f"  credits file: {rel} ({len(rows)} rows)")
+            for row in rows:
+                text = credit_from_fields(row)
+                for key in ("task_id", "media_path", "file", "filename", "path"):
+                    if text and row.get(key):
+                        index[str(row[key])] = text
+                        index[Path(str(row[key])).name] = text
+        for key, text in load_json(CREDIT_OVERRIDES, {}).items():
+            index[str(key)] = str(text)
+        return index
+
+
+def _read_table(path: Path) -> List[Dict[str, Any]]:
+    import csv
+    text = path.read_text(encoding="utf-8")
+    if path.suffix.lower() == ".jsonl":
+        return [json.loads(line) for line in text.splitlines() if line.strip()]
+    if path.suffix.lower() == ".json":
+        doc = json.loads(text)
+        if isinstance(doc, dict):
+            return [{"task_id": k, **(v if isinstance(v, dict) else {"credit": v})}
+                    for k, v in doc.items()]
+        return [r for r in doc if isinstance(r, dict)]
+    return list(csv.DictReader(io.StringIO(text), delimiter="\t" if path.suffix == ".tsv" else ","))
+
+
+def explain_hub_error(exc: Exception) -> str:
+    if "Gated" in type(exc).__name__ or "401" in str(exc) or "403" in str(exc):
+        return ("The dataset refused access. Open https://huggingface.co/datasets/ScaleAI/HSS, "
+                "accept its terms, then run `hf auth login` (or export HF_TOKEN) and retry.")
+    return f"{type(exc).__name__}: {exc}"

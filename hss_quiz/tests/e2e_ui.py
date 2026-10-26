@@ -1,9 +1,9 @@
-"""Drive the projector and camera pages in headless Chromium against the fake API.
+"""Drive the projector page in headless Chromium against the fake Hub and API.
 
-    python tests/e2e_ui.py <data_dir> <screenshot_dir>
+    python tests/e2e_ui.py <screenshot_dir> <hub_requests.log>
 
-Expects tests/fake_anthropic.py on 127.0.0.1:8765 and a data dir prepared
-with prepare.py. Starts server.py itself (live, then --offline).
+Expects tests/fake_anthropic.py on 127.0.0.1:8765 and tests/fake_hub.py on
+127.0.0.1:8766 (see run_e2e.sh). Starts server.py itself.
 """
 
 import json
@@ -14,14 +14,14 @@ import time
 import urllib.request
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA, SHOTS = Path(sys.argv[1]), Path(sys.argv[2])
+SHOTS, HUB_LOG = Path(sys.argv[1]), Path(sys.argv[2])
 SHOTS.mkdir(parents=True, exist_ok=True)
 PORT = 8811
 BASE = f"http://127.0.0.1:{PORT}"
+COUNTDOWN = 4
 
 
 def fake(**kw):
@@ -30,12 +30,11 @@ def fake(**kw):
     urllib.request.urlopen(req).read()
 
 
-def start_server(*extra):
-    env = {**os.environ, "HSS_DATA_DIR": str(DATA), "ANTHROPIC_BASE_URL": "http://127.0.0.1:8765",
-           "ANTHROPIC_API_KEY": "fake"}
-    proc = subprocess.Popen([sys.executable, str(ROOT / "server.py"), "--port", str(PORT), *extra],
-                            env=env, cwd=ROOT)
-    for _ in range(50):
+def start_server():
+    env = {**os.environ, "ANTHROPIC_BASE_URL": "http://127.0.0.1:8765", "ANTHROPIC_API_KEY": "fake"}
+    proc = subprocess.Popen([sys.executable, str(ROOT / "server.py"), "--port", str(PORT),
+                             "--seed", "3", "--countdown", str(COUNTDOWN)], env=env, cwd=ROOT)
+    for _ in range(100):
         try:
             urllib.request.urlopen(BASE + "/api/state")
             return proc
@@ -44,27 +43,28 @@ def start_server(*extra):
     raise RuntimeError("server did not start")
 
 
-def handwriting(path: Path):
-    im = Image.new("RGB", (1200, 800), "#fbfaf4")
-    d = ImageDraw.Draw(im)
-    try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 80)
-    except OSError:
-        font = None
-    d.text((80, 300), "There are 4 circles", fill="#1a237e", font=font)
-    im.save(path, "JPEG")
-
-
 def state(page):
     return page.evaluate("fetch('/api/state').then(r => r.json())")
 
 
+def wait_ready(page):
+    for _ in range(100):
+        q = state(page)["question"]
+        if q and q["status"] == "ready":
+            return q
+        time.sleep(0.1)
+    raise AssertionError("question never loaded")
+
+
+def media_fetched():
+    return {line.split()[1] for line in HUB_LOG.read_text().splitlines() if "/resolve/main/media/" in line}
+
+
 def main():
-    photo = SHOTS / "handwriting.jpg"
-    handwriting(photo)
     fake(delay=0, fail=False)
-    proc = start_server("--live-grace", "3")
+    proc = start_server()
     errors = []
+    seen = []
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch()
@@ -72,137 +72,94 @@ def main():
             page.on("pageerror", lambda e: errors.append(str(e)))
             page.goto(BASE + "/")
             expect(page.locator("#title")).to_be_visible()
+            expect(page.locator("#title-src")).to_contain_text("70 tasks")
             page.screenshot(path=SHOTS / "01_title.png")
 
-            # Q1: question appears, live call starts in the background
-            page.keyboard.press("Space")
-            expect(page.locator("#quiz")).to_be_visible()
-            expect(page.locator("#prompt")).not_to_be_empty()
-            time.sleep(1.5)
-            page.keyboard.press("p")
-            expect(page.locator("#pens")).to_be_visible()
-            page.screenshot(path=SHOTS / "02_question_pens_down.png")
-            page.keyboard.press("c")
-            expect(page.locator(".badge.live")).to_be_visible(timeout=10000)
-            page.keyboard.press("t")
-            expect(page.locator(".thinking")).to_be_visible()
-            page.keyboard.press("t")
-            page.keyboard.press("r")
-            expect(page.locator(".ref-card")).to_be_visible()
-            expect(page.locator(".mark.y, .mark.n").first).to_be_visible(timeout=10000)
-            page.keyboard.press("a")
-            expect(page.locator("#sa")).to_have_text("1")
-            page.screenshot(path=SHOTS / "03_claude_live_and_rubric.png")
-            s = state(page)
-            assert s["question"]["source"] == "live", s["question"]["source"]
-            assert s["question"]["judgment"] is not None
-
-            # Q2 (a video): phone submits a handwritten answer
-            page.keyboard.press("Space")
-            expect(page.locator("#media video")).to_be_visible()
-            assert state(page)["question"]["kind"] == "video"
-            phone = browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True)
-            phone.on("pageerror", lambda e: errors.append(str(e)))
-            phone.goto(BASE + "/camera")
-            expect(phone.locator("#qlabel")).to_have_text("Question 2 of 35")
-            phone.fill("#name", "Table 3")
-            phone.set_input_files("#file", str(photo))
-            expect(phone.locator("#previewCard")).to_be_visible()
-            phone.screenshot(path=SHOTS / "04_phone_preview.png")
-            phone.click("#send")
-            expect(phone.locator("#result")).to_contain_text("Graded", timeout=15000)
-            expect(phone.locator("#result")).to_contain_text("There are 4 circles")
-            phone.screenshot(path=SHOTS / "05_phone_graded_hidden.png")
-            expect(page.locator("#cam")).to_contain_text("1 photo answer")
-            page.keyboard.press("h")
-            page.keyboard.press("c")
-            expect(page.locator(".badge.live")).to_be_visible(timeout=10000)
-            page.keyboard.press("r")
-            expect(page.locator(".sub")).to_contain_text("Table 3")
-            expect(page.locator(".sub .badge")).to_be_visible()
-            page.screenshot(path=SHOTS / "06_video_with_camera_answer.png")
-            expect(phone.locator("#result .pass, #result .fail")).to_be_visible(timeout=5000)
-            phone.screenshot(path=SHOTS / "07_phone_revealed.png")
-
-            # Q3: slow live call -> waiting, then cached after the 3 s grace
-            fake(delay=20)
-            page.keyboard.press("Space")
-            page.keyboard.press("c")
-            expect(page.locator(".badge.wait")).to_be_visible()
-            page.screenshot(path=SHOTS / "08_waiting_for_live.png")
-            expect(page.locator(".badge.cached")).to_be_visible(timeout=8000)
-            expect(page.locator(".note")).to_contain_text("still running")
-            page.screenshot(path=SHOTS / "09_cached_fallback.png")
-
-            # Q4: slow again, second C forces the cache right away
-            page.keyboard.press("Space")
-            page.keyboard.press("c")
-            expect(page.locator(".badge.wait")).to_be_visible()
-            page.keyboard.press("c")
-            expect(page.locator(".badge.cached")).to_be_visible(timeout=2000)
-
-            # Q5: failing live call -> cached with the error note
-            fake(delay=0, fail=True)
-            page.keyboard.press("Space")
-            time.sleep(1.5)
-            page.keyboard.press("c")
-            expect(page.locator(".badge.cached")).to_be_visible(timeout=5000)
-            expect(page.locator(".note")).to_contain_text("Live call failed")
-            fake(fail=False)
-
-            # S skips Q6; back/forward keeps per-question state
-            page.keyboard.press("Space")
-            page.keyboard.press("s")
-            s = state(page)
-            assert s["index"] == 6, s["index"]
-            page.keyboard.press("ArrowLeft")
-            expect(page.locator("#awards")).to_contain_text("skipped")
-            page.keyboard.press("ArrowLeft")
-            page.keyboard.press("ArrowLeft")
-            page.keyboard.press("ArrowLeft")
-            page.keyboard.press("ArrowLeft")
-            expect(page.locator("#awards")).to_contain_text("+1 Humans")
-            for _ in range(40):
+            # Walk forward until we've covered an image, a short video and a long one.
+            image_done = video_done = long_done = False
+            while not (image_done and video_done and long_done):
                 page.keyboard.press("Space")
-            expect(page.locator("#end")).to_be_visible()
-            expect(page.locator("#end-h")).to_have_text("1")
-            expect(page.locator("#end-a")).to_have_text("1")
-            page.screenshot(path=SHOTS / "10_final.png")
-            page.keyboard.press("?")
-            browser.close()
-    finally:
-        proc.terminate()
-        proc.wait()
+                q = wait_ready(page)
+                seen.append(q["task_id"])
+                assert len(seen) < 40, "never met every kind of question"
+                assert q["claude_status"] in ("pending", "done"), "Claude didn't start with the question"
+                time.sleep(0.5)
+                assert len(media_fetched()) >= len(seen) + 1, "next question wasn't prefetched"
+                if q["kind"] == "image" and not image_done:
+                    expect(page.locator("#media img")).to_be_visible()
+                    expect(page.locator("#len")).to_be_hidden()
+                    page.keyboard.press("p")
+                    expect(page.locator("#pens")).to_be_visible()
+                    page.keyboard.press("c")
+                    expect(page.locator(".claude-card .body")).to_be_visible(timeout=10000)
+                    page.keyboard.press("r")
+                    expect(page.locator(".mark.y, .mark.n").first).to_be_visible(timeout=10000)
+                    page.keyboard.press("a")
+                    expect(page.locator("#sa")).to_have_text("1")
+                    page.screenshot(path=SHOTS / "02_image_revealed.png")
+                    image_done = True
+                elif q["kind"] == "video" and q["duration"] <= 60 and not video_done:
+                    expect(page.locator("#len")).to_have_text(
+                        f"▶ video {int(q['duration'] // 60)}:{int(round(q['duration'] % 60)):02d}")
+                    expect(page.locator("#len")).not_to_have_class("len long")
+                    expect(page.locator("#cd")).to_be_visible()
+                    page.screenshot(path=SHOTS / "03_video_countdown.png")
+                    time.sleep(1)
+                    assert page.evaluate("document.getElementById('vid').paused"), "video played during countdown"
+                    expect(page.locator("#cd")).to_be_hidden(timeout=(COUNTDOWN + 2) * 1000)
+                    page.wait_for_function("!document.getElementById('vid').paused", timeout=5000)
+                    page.keyboard.press("h")
+                    page.keyboard.press("c")
+                    expect(page.locator(".claude-card .body")).to_be_visible(timeout=10000)
+                    page.keyboard.press("r")
+                    page.screenshot(path=SHOTS / "04_video_revealed.png")
+                    video_done = True
+                elif q["kind"] == "video" and q["duration"] > 60 and not long_done:
+                    expect(page.locator("#len.long")).to_be_visible()
+                    expect(page.locator("#cd")).to_contain_text("press S to skip")
+                    page.screenshot(path=SHOTS / "05_long_video_countdown.png")
+                    page.keyboard.press("s")
+                    assert state(page)["question"]["number"] == len(seen) + 1
+                    page.keyboard.press("ArrowLeft")
+                    expect(page.locator("#awards")).to_contain_text("skipped")
+                    page.keyboard.press("ArrowRight")
+                    long_done = True
+                elif q["kind"] == "video":
+                    # V skips the countdown
+                    page.keyboard.press("v")
+                    expect(page.locator("#cd")).to_be_hidden(timeout=1500)
 
-    # Offline: cached answers only, no API traffic
-    log = Path(os.environ["FAKE_LOG"])
-    before = len(log.read_text().splitlines())
-    proc = start_server("--offline")
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch()
-            page = browser.new_page(viewport={"width": 1440, "height": 900})
-            page.on("pageerror", lambda e: errors.append(str(e)))
-            page.goto(BASE + "/")
+            # A failed call shows the error; C again retries.
+            fake(fail=True)
             page.keyboard.press("Space")
-            page.keyboard.press("Space")
-            expect(page.locator("#offline-chip")).to_be_visible()
+            q = wait_ready(page)
+            seen.append(q["task_id"])
+            time.sleep(0.5)
             page.keyboard.press("c")
-            expect(page.locator(".badge.cached")).to_be_visible(timeout=2000)
-            page.keyboard.press("r")
-            expect(page.locator(".mark.y, .mark.n").first).to_be_visible()
-            page.screenshot(path=SHOTS / "11_offline_cached.png")
-            phone = browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True)
-            phone.goto(BASE + "/camera")
-            expect(phone.locator("#q")).to_contain_text("offline")
+            expect(page.locator(".claude-card .err")).to_contain_text("fake failure", timeout=5000)
+            page.screenshot(path=SHOTS / "06_claude_error.png")
+            fake(fail=False)
+            page.keyboard.press("c")
+            expect(page.locator(".claude-card .body")).to_be_visible(timeout=10000)
+
+            # A slow call shows Claude still thinking.
+            fake(delay=3)
+            page.keyboard.press("Space")
+            seen.append(wait_ready(page)["task_id"])
+            page.keyboard.press("c")
+            expect(page.locator(".badge.wait")).to_be_visible()
+            expect(page.locator(".claude-card .body")).to_be_visible(timeout=10000)
+            fake(delay=0)
+
+            assert len(set(seen)) == len(seen), "a question repeated"
+            page.keyboard.press("?")
+            expect(page.locator("#help")).to_be_visible()
             browser.close()
     finally:
         proc.terminate()
         proc.wait()
-    after = len(log.read_text().splitlines())
-    assert after == before, f"offline mode made {after - before} API calls"
     assert not errors, errors
-    print("UI end-to-end: all checks passed")
+    print(f"UI end-to-end: all checks passed ({len(seen)} questions shown)")
 
 
 if __name__ == "__main__":

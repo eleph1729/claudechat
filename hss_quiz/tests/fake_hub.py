@@ -1,11 +1,11 @@
 """Serve a local dataset directory the way the Hugging Face Hub does, for testing.
 
     python tests/fake_hub.py 8766 /tmp/hss-fixture
-    HF_ENDPOINT=http://127.0.0.1:8766 HF_TOKEN=hf_fake python prepare.py
+    HF_ENDPOINT=http://127.0.0.1:8766 HF_TOKEN=hf_fake python server.py
 
-Implements just what prepare.py touches: the repo tree listing and
-`resolve/main/<file>` (with a redirect to a "CDN" host that rejects auth headers, like the real Hub,
-and HTTP range support so ffprobe can read durations without downloading).
+Implements just what the app touches: the repo tree listing and
+`resolve/main/<file>` (with a redirect to a "CDN" host that rejects auth headers,
+like the real Hub).
 Every request must carry the bearer token, as for a gated dataset; requests
 are logged to <root>/../hub_requests.log so tests can count media downloads.
 """
