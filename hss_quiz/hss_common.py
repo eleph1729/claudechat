@@ -263,11 +263,17 @@ def sample_frames(video: Path, out_dir: Path) -> tuple[List[Path], List[float], 
             f.unlink()
         scale = (f"scale=w='min({FRAME_MAX_SIDE},iw)':h='min({FRAME_MAX_SIDE},ih)'"
                  ":force_original_aspect_ratio=decrease:flags=lanczos")
-        cmd = [require_tool("ffmpeg"), "-nostdin", "-v", "error", "-y", "-i", str(video),
-               "-vf", f"fps={fps:.10g},{scale}", "-vsync", "0",
-               "-frames:v", str(VIDEO_MAX_FRAMES), "-q:v", "3",
-               str(out_dir / "frame_%05d.jpg")]
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        def run(passthrough: List[str]) -> subprocess.CompletedProcess:
+            cmd = [require_tool("ffmpeg"), "-nostdin", "-v", "error", "-y", "-i", str(video),
+                   "-vf", f"fps={fps:.10g},{scale}", *passthrough,
+                   "-frames:v", str(VIDEO_MAX_FRAMES), "-q:v", "3",
+                   str(out_dir / "frame_%05d.jpg")]
+            return subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+        # ffmpeg 5.1+ spells it -fps_mode; ffmpeg 8 removed the older -vsync.
+        proc = run(["-fps_mode", "passthrough"])
+        if proc.returncode != 0 and "fps_mode" in proc.stderr:
+            proc = run(["-vsync", "0"])
         if proc.returncode != 0:
             raise RuntimeError(f"ffmpeg failed on {video.name}: {proc.stderr.strip()[:300]}")
         frames = sorted(out_dir.glob("frame_*.jpg"))
