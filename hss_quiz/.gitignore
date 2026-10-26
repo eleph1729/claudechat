@@ -1,0 +1,4 @@
+.venv/
+data/
+credits.json
+__pycache__/

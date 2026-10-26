@@ -1,5 +1,8 @@
 # Panel Bot
 
+> Also in this repo: [`hss_quiz/`](hss_quiz/README.md), a projector quiz-show demo of
+> the Humanity's Sixth Sense visual reasoning benchmark.
+
 A chatbot that listens to a live panel discussion and decides *when* — and
 whether — to speak, rather than just taking strict turns. Built to run on a
 MacBook Pro with audio in/out from the Mac.
