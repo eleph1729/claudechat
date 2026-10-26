@@ -17,23 +17,38 @@ server.py:   projector page (/)  ◄── keyboard ──  host
 
 ## Run it on macOS
 
-Python 3.10 or newer is needed (the stock macOS `python3` may be older).
+Python 3.10 or newer is needed (the stock macOS `python3` may be older). First
+get the code and set up a virtual environment:
 
 ```bash
 brew install python@3.12 ffmpeg
+git clone https://github.com/eleph1729/claudechat.git
+cd claudechat
+git checkout claude/happy-hopper-y4t0bg
 cd hss_quiz
-python3.12 -m venv .venv && source .venv/bin/activate
+python3.12 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-
-# HSS is hosted on Hugging Face: accept the dataset's terms on its page
-# (https://huggingface.co/datasets/ScaleAI/HSS), then log in once:
-hf auth login                     # or: export HF_TOKEN=hf_...
-
-export ANTHROPIC_API_KEY=sk-ant-...
-
-python prepare.py                 # shortlist, media, Claude's answers (a few minutes)
-python server.py                  # then open http://localhost:8000 and press F for full screen
 ```
+
+HSS is hosted on Hugging Face. Accept the dataset's terms at
+https://huggingface.co/datasets/ScaleAI/HSS, then log in once and set your
+Anthropic key:
+
+```bash
+hf auth login
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Build the quiz (takes a few minutes; re-running resumes where it stopped), then
+start the show:
+
+```bash
+python prepare.py
+python server.py
+```
+
+Open http://localhost:8000 and press `F` for full screen.
 
 `server.py` prints the phone URL and shows it as a QR code on the title screen.
 Phones need to be on the same Wi-Fi as the Mac. The first time the server runs,
