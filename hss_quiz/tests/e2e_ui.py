@@ -22,6 +22,8 @@ SHOTS.mkdir(parents=True, exist_ok=True)
 PORT = 8811
 BASE = f"http://127.0.0.1:{PORT}"
 COUNTDOWN = 4
+# make_fixture.py videos longer than 60 s
+LONG_FIXTURE_VIDEOS = [1, 4, 9, 22, 27]
 
 
 def fake(**kw):
@@ -30,10 +32,10 @@ def fake(**kw):
     urllib.request.urlopen(req).read()
 
 
-def start_server():
+def start_server(*extra):
     env = {**os.environ, "ANTHROPIC_BASE_URL": "http://127.0.0.1:8765", "ANTHROPIC_API_KEY": "fake"}
     proc = subprocess.Popen([sys.executable, str(ROOT / "server.py"), "--port", str(PORT),
-                             "--seed", "3", "--countdown", str(COUNTDOWN)], env=env, cwd=ROOT)
+                             "--seed", "3", "--countdown", str(COUNTDOWN), *extra], env=env, cwd=ROOT)
     for _ in range(100):
         try:
             urllib.request.urlopen(BASE + "/api/state")
@@ -47,17 +49,25 @@ def state(page):
     return page.evaluate("fetch('/api/state').then(r => r.json())")
 
 
-def wait_ready(page):
+def wait_ready(page, number=None):
+    """The current question once it has loaded (and, if given, once it is question `number`)."""
     for _ in range(100):
         q = state(page)["question"]
-        if q and q["status"] == "ready":
+        if q and q["status"] == "ready" and number in (None, q["number"]):
             return q
         time.sleep(0.1)
     raise AssertionError("question never loaded")
 
 
-def media_fetched():
-    return {line.split()[1] for line in HUB_LOG.read_text().splitlines() if "/resolve/main/media/" in line}
+def downloads():
+    """Media files fully downloaded: un-ranged GETs from the "CDN". (Length checks are
+    a HEAD on the Hub to find the CDN URL, then ffprobe's ranged GETs.)"""
+    out = set()
+    for line in HUB_LOG.read_text().splitlines():
+        method, path, *rest = line.split()
+        if method == "GET" and path.startswith("/cdn/media/") and rest == ["cdn"]:
+            out.add(path[len("/cdn/"):])
+    return out
 
 
 def main():
@@ -75,16 +85,19 @@ def main():
             expect(page.locator("#title-src")).to_contain_text("70 tasks")
             page.screenshot(path=SHOTS / "01_title.png")
 
-            # Walk forward until we've covered an image, a short video and a long one.
-            image_done = video_done = long_done = False
-            while not (image_done and video_done and long_done):
+            # Walk through a dozen random questions: no video over a minute ever shows.
+            image_done = video_done = False
+            for n in range(1, 13):
                 page.keyboard.press("Space")
-                q = wait_ready(page)
+                q = wait_ready(page, n)
                 seen.append(q["task_id"])
-                assert len(seen) < 40, "never met every kind of question"
                 assert q["claude_status"] in ("pending", "done"), "Claude didn't start with the question"
                 time.sleep(0.5)
-                assert len(media_fetched()) >= len(seen) + 1, "next question wasn't prefetched"
+                assert len(downloads()) >= len(seen) + 1, "next question wasn't prefetched"
+                if q["kind"] == "video":
+                    assert q["duration"] <= 60, f"{q['task_id']} is {q['duration']} s long"
+                    expect(page.locator("#len")).to_have_text(
+                        f"▶ video {int(q['duration'] // 60)}:{int(round(q['duration'] % 60)):02d}")
                 if q["kind"] == "image" and not image_done:
                     expect(page.locator("#media img")).to_be_visible()
                     expect(page.locator("#len")).to_be_hidden()
@@ -98,10 +111,7 @@ def main():
                     expect(page.locator("#sa")).to_have_text("1")
                     page.screenshot(path=SHOTS / "02_image_revealed.png")
                     image_done = True
-                elif q["kind"] == "video" and q["duration"] <= 60 and not video_done:
-                    expect(page.locator("#len")).to_have_text(
-                        f"▶ video {int(q['duration'] // 60)}:{int(round(q['duration'] % 60)):02d}")
-                    expect(page.locator("#len")).not_to_have_class("len long")
+                elif q["kind"] == "video" and not video_done:
                     expect(page.locator("#cd")).to_be_visible()
                     page.screenshot(path=SHOTS / "03_video_countdown.png")
                     time.sleep(1)
@@ -112,27 +122,24 @@ def main():
                     page.keyboard.press("c")
                     expect(page.locator(".claude-card .body")).to_be_visible(timeout=10000)
                     page.keyboard.press("r")
+                    expect(page.locator(".ref-card")).to_be_visible()
                     page.screenshot(path=SHOTS / "04_video_revealed.png")
                     video_done = True
-                elif q["kind"] == "video" and q["duration"] > 60 and not long_done:
-                    expect(page.locator("#len.long")).to_be_visible()
-                    expect(page.locator("#cd")).to_contain_text("press S to skip")
-                    page.screenshot(path=SHOTS / "05_long_video_countdown.png")
-                    page.keyboard.press("s")
-                    assert state(page)["question"]["number"] == len(seen) + 1
-                    page.keyboard.press("ArrowLeft")
-                    expect(page.locator("#awards")).to_contain_text("skipped")
-                    page.keyboard.press("ArrowRight")
-                    long_done = True
                 elif q["kind"] == "video":
-                    # V skips the countdown
-                    page.keyboard.press("v")
+                    page.keyboard.press("v")              # V skips the countdown
                     expect(page.locator("#cd")).to_be_hidden(timeout=1500)
+            assert image_done and video_done, "never drew both an image and a video"
+            page.keyboard.press("s")
+            seen.append(wait_ready(page, 13)["task_id"])
+            page.keyboard.press("ArrowLeft")
+            expect(page.locator("#awards")).to_contain_text("skipped")
+            page.keyboard.press("ArrowRight")
+            wait_ready(page, 13)
 
             # A failed call shows the error; C again retries.
             fake(fail=True)
             page.keyboard.press("Space")
-            q = wait_ready(page)
+            q = wait_ready(page, 14)
             seen.append(q["task_id"])
             time.sleep(0.5)
             page.keyboard.press("c")
@@ -145,7 +152,7 @@ def main():
             # A slow call shows Claude still thinking.
             fake(delay=3)
             page.keyboard.press("Space")
-            seen.append(wait_ready(page)["task_id"])
+            seen.append(wait_ready(page, 15)["task_id"])
             page.keyboard.press("c")
             expect(page.locator(".badge.wait")).to_be_visible()
             expect(page.locator(".claude-card .body")).to_be_visible(timeout=10000)
@@ -158,7 +165,31 @@ def main():
     finally:
         proc.terminate()
         proc.wait()
+    # Videos only: every one of the fixture's 25 short-enough videos, and none longer.
+    proc = start_server("--kind", "video")
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page(viewport={"width": 1280, "height": 720})
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            page.goto(BASE + "/")
+            shown = []
+            for n in range(1, 26):
+                page.keyboard.press("Space")
+                q = wait_ready(page, n)
+                assert q["kind"] == "video" and q["duration"] <= 60, q
+                shown.append(q["task_id"])
+            assert len(set(shown)) == 25, f"a video repeated before all short ones were shown: {shown}"
+            browser.close()
+    finally:
+        proc.terminate()
+        proc.wait()
+
     assert not errors, errors
+    long_ones = {f"media/videos/vid_{i:03d}.mp4" for i in LONG_FIXTURE_VIDEOS}
+    assert not downloads() & long_ones, f"downloaded long videos: {downloads() & long_ones}"
+    durations = json.loads((Path(os.environ["HSS_DATA_DIR"]) / "durations.json").read_text())
+    assert sum(d > 60 for d in durations.values()) == len(LONG_FIXTURE_VIDEOS), durations
     print(f"UI end-to-end: all checks passed ({len(seen)} questions shown)")
 
 

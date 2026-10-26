@@ -4,8 +4,10 @@
 
 Each question's media is downloaded when it's needed (into the Hugging Face
 cache), and the next random question downloads in the background while the
-current one is on screen. Claude starts answering the moment a question
-appears. Videos show their length up front and start playing after a short
+current one is on screen. Videos longer than --max-video (60 s) are never
+shown: a video's length is read from the Hub before it is downloaded, and
+remembered in data/durations.json. Claude starts answering the moment a
+question appears. Videos show their length and start playing after a short
 countdown, so the audience can read the question first.
 """
 
@@ -27,6 +29,7 @@ import hss_common as hc
 
 STATIC = hc.ROOT / "static"
 FRAMES = hc.DATA_DIR / "frames"
+DURATIONS = hc.DATA_DIR / "durations.json"
 
 
 class Show:
@@ -40,13 +43,28 @@ class Show:
         self.pool = ThreadPoolExecutor(max_workers=4)
         self.history: List[Dict[str, Any]] = []   # questions drawn so far, in order
         self.index = -1                           # -1 = title screen
+        self.durations: Dict[str, float] = hc.load_json(DURATIONS, {})
+        for t in tasks:
+            if t.media_kind == "video":
+                t.duration = self.durations.get(t.media_path, t.duration)
+        self.too_long = {t.task_id for t in tasks if self.is_too_long(t)}
+
+    def is_too_long(self, task: hc.Task) -> bool:
+        return (task.media_kind == "video" and task.duration is not None
+                and task.duration > self.opts.max_video)
 
     # ---- drawing and loading questions -------------------------------------
     def draw(self) -> hc.Task:
-        """Next random task; every task comes up once before any repeats."""
-        if not self.order:
-            self.order = self.rng.sample(self.tasks, len(self.tasks))
-        return self.order.pop()
+        """Next random task; every task comes up once before any repeats.
+        Videos already known to be too long are passed over."""
+        for _ in range(2):
+            if not self.order:
+                self.order = self.rng.sample(self.tasks, len(self.tasks))
+            while self.order:
+                task = self.order.pop()
+                if task.task_id not in self.too_long:
+                    return task
+        raise RuntimeError(f"no questions left with videos of {self.opts.max_video:g} s or less")
 
     def add_entry(self) -> Dict[str, Any]:
         entry = {"task": self.draw(), "status": "loading", "error": None, "shown_at": None,
@@ -57,20 +75,37 @@ class Show:
         return entry
 
     def load(self, entry: Dict[str, Any]) -> None:
-        task = entry["task"]
         try:
-            path = self.ds.fetch(task.media_path)
-            duration = hc.probe_duration(str(path)) if task.media_kind == "video" else None
-            with self.lock:
-                task.local_path = str(path)
-                task.duration = duration or task.duration
-                entry["status"] = "ready"
-                if self.current() is entry:
-                    self.activate(entry)
+            for _ in range(len(self.tasks)):
+                task = entry["task"]
+                path = None
+                if task.media_kind == "video" and task.duration is None:
+                    try:
+                        task.duration = self.ds.remote_duration(task.media_path)
+                    except Exception as exc:  # noqa: BLE001 - fall back to downloading it
+                        print(f"[load] couldn't read {task.task_id}'s length in place ({exc}); downloading")
+                        path = self.ds.fetch(task.media_path)
+                        task.duration = hc.probe_duration(str(path))
+                    with self.lock:
+                        self.durations[task.media_path] = round(task.duration, 2)
+                        hc.save_json(DURATIONS, self.durations)
+                if self.is_too_long(task):
+                    with self.lock:
+                        self.too_long.add(task.task_id)
+                        entry["task"] = self.draw()
+                    continue
+                path = path or self.ds.fetch(task.media_path)
+                with self.lock:
+                    task.local_path = str(path)
+                    entry["status"] = "ready"
+                    if self.current() is entry:
+                        self.activate(entry)
+                return
+            raise RuntimeError(f"no videos of {self.opts.max_video:g} s or less found")
         except Exception as exc:  # noqa: BLE001
             with self.lock:
                 entry.update(status="error", error=f"{type(exc).__name__}: {exc}")
-            print(f"[load] {task.task_id} failed: {exc}")
+            print(f"[load] {entry['task'].task_id} failed: {exc}")
 
     def current(self) -> Optional[Dict[str, Any]]:
         return self.history[self.index] if 0 <= self.index < len(self.history) else None
@@ -161,7 +196,7 @@ class Show:
                 "scores": {"human": sum(e["human"] for e in self.history),
                            "ai": sum(e["ai"] for e in self.history),
                            "played": sum(1 for e in shown if not e["skipped"])},
-                "model": self.opts.model, "long_video": self.opts.long_video, "question": None}
+                "model": self.opts.model, "question": None}
             entry = self.current()
             if not entry:
                 return out
@@ -240,8 +275,8 @@ def main() -> None:
                     help="only draw images or only videos")
     ap.add_argument("--countdown", type=float, default=10.0,
                     help="seconds before a video starts playing")
-    ap.add_argument("--long-video", type=float, default=60.0,
-                    help="videos longer than this (seconds) get a warning-coloured length badge")
+    ap.add_argument("--max-video", type=float, default=60.0,
+                    help="never show videos longer than this many seconds")
     ap.add_argument("--seed", type=int, default=None, help="fix the random order")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8000)
@@ -271,7 +306,8 @@ def main() -> None:
     with show.lock:
         show.add_entry()                          # start fetching the first question now
     n_img = sum(t.media_kind == "image" for t in tasks)
-    print(f"\n  {len(tasks)} questions ({n_img} images, {len(tasks) - n_img} videos)")
+    print(f"\n  {len(tasks)} questions ({n_img} images, {len(tasks) - n_img} videos; "
+          f"videos over {opts.max_video:g} s are skipped, {len(show.too_long)} known so far)")
     print(f"  Open http://localhost:{opts.port}/ and press F for full screen\n")
     uvicorn.run(app, host=opts.host, port=opts.port, log_level="warning")
 

@@ -6,7 +6,7 @@ intuitive visual reasoning benchmark from Scale AI and Elorian
 [`ScaleAI/HSS`](https://huggingface.co/datasets/ScaleAI/HSS)).
 
 Questions are drawn at random from the whole dataset (522 tasks: images and
-videos). The audience writes down an answer while Claude answers the same
+videos), leaving out videos longer than one minute. The audience writes down an answer while Claude answers the same
 question live. Then the host reveals Claude's answer, the reference answer and
 the rubric.
 
@@ -53,7 +53,7 @@ screen, the next random one downloads in the background.
 | Key | Action |
 | --- | --- |
 | `Space` / `→` | next random question (`←` goes back; each question keeps its state) |
-| `S` | skip, e.g. a video that's too long |
+| `S` | skip this question |
 | `V` | play the video now, without waiting for the countdown |
 | `P` | pens down: stops the clock |
 | `C` | reveal Claude's answer. If Claude is still thinking, a spinner shows how long it has taken so far, and the answer appears as soon as it arrives. If the call failed, the error is shown and pressing `C` again retries. |
@@ -62,11 +62,16 @@ screen, the next random one downloads in the background.
 | `T` | show Claude's reasoning summary |
 | `F` | full screen · `?` help · `Shift`+`R` restart |
 
-**Videos.** A video's length shows in the top bar as soon as the question
-appears (amber when it is longer than 60 seconds; `--long-video` changes that).
-The video stays paused behind a 10-second countdown so everyone can read the
-question first, then plays on a loop without sound (the benchmark doesn't use
-audio). `--countdown` changes the delay.
+**Videos.** Videos longer than 60 seconds are never shown (`--max-video 90`
+changes the limit). The server reads each video's length from the Hub before
+downloading it; ffprobe fetches only a few kilobytes, so long videos are passed
+over without being downloaded. Lengths are remembered in `data/durations.json`,
+so known long videos are skipped instantly in later shows.
+
+A video's length shows in the top bar as soon as the question appears. The video
+stays paused behind a 10-second countdown so everyone can read the question
+first, then plays on a loop without sound (the benchmark doesn't use audio).
+`--countdown` changes the delay.
 
 **Claude starts when the question appears**, at the same time as the audience,
 and gets the whole video at once as frames. The small status at the bottom right
@@ -76,8 +81,8 @@ faster.
 
 ## Options
 
-`--kind image` or `--kind video` (draw only one kind), `--countdown 10`,
-`--long-video 60`, `--seed N` (repeatable order), `--effort LEVEL`,
+`--kind image` or `--kind video` (draw only one kind), `--max-video 60`,
+`--countdown 10`, `--seed N` (repeatable order), `--effort LEVEL`,
 `--model`, `--judge-model`, `--port 8000`, `--dataset PATH` (a local copy of the
 dataset repo instead of the Hub).
 
@@ -93,12 +98,12 @@ they reproduce Appendix C.6 verbatim:
 - Images are sent at native resolution. They are downscaled only above 4096 px or
   4.5 MB.
 - Videos are sent as frames sampled uniformly at **2 fps** with ffmpeg (capped at
-  500, so longer videos are sampled more sparsely), scaled to a longest side of
+  500), scaled to a longest side of
   768 px. Each frame is preceded by a `[frame t=1.50s]` label. The preamble gives
   the frame count, rate, duration and timestamps. There is no audio.
-- The Claude API caps a request at 32 MB, so when a long video's frames would
-  exceed about 20 MB they are re-encoded smaller (the authors' harness does the
-  same, with its own budget).
+- The Claude API caps a request at 32 MB, so if a video's frames would exceed
+  about 20 MB they are re-encoded smaller (the authors' harness does the same,
+  with its own budget). Under a minute this rarely applies.
 - Claude Opus 5.5 runs with adaptive thinking at effort `xhigh`, the paper's
   setting for this model.
 - Grading uses the paper's judge prompt, a text-only judge (`claude-opus-5` at
@@ -133,8 +138,10 @@ Chromium and checks:
 - random draws with no repeats, and the next question downloading in the
   background;
 - Claude starting with each question;
+- no video over a minute is ever shown or downloaded, and lengths are
+  remembered;
 - the video length badge, the countdown (video paused until it ends), `V`
-  skipping it, and `S` skipping a long video;
+  skipping it, and `S` skipping a question;
 - reveals, scoring, a slow call, and a failed call retried with `C`;
 - the prompt layout, the 2 fps frame counts, and the frame-size budget.
 

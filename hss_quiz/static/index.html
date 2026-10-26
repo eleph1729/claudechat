@@ -25,7 +25,6 @@
   .spacer { flex: 1; }
   .len { font-weight: 800; padding: .15em .6em; border-radius: 8px; background: var(--panel2);
     color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .len.long { background: #4a2a12; color: var(--warn); }
   .timer { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 4.5em; text-align: right; }
   .timer.stopped { color: var(--bad); }
   .score { display: flex; gap: .8vw; align-items: center; font-weight: 700; white-space: nowrap; }
@@ -44,7 +43,6 @@
   .countdown .n { font-size: 11vw; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
   .countdown .t { font-size: 1.6vw; color: var(--dim); }
   .countdown .l { font-size: 2.2vw; font-weight: 800; }
-  .countdown .l.long { color: var(--warn); }
   .loading { display: flex; flex-direction: column; align-items: center; gap: 2vh; font-size: 1.6vw; color: var(--dim);
     text-align: center; padding: 0 4vw; }
   .side { padding: 2vh 1.6vw; overflow-y: auto; display: flex; flex-direction: column; gap: 1.6vh; }
@@ -147,7 +145,7 @@
 <div class="help hidden" id="help"><div class="box">
   <h2>Host keys</h2>
   <kbd>Space</kbd> next random question &nbsp; <kbd>←</kbd> previous<br>
-  <kbd>S</kbd> skip (e.g. a video that's too long)<br>
+  <kbd>S</kbd> skip this question<br>
   <kbd>V</kbd> play the video now (skip the countdown)<br>
   <kbd>P</kbd> pens down (stops the clock)<br>
   <kbd>C</kbd> reveal Claude's answer (press again to retry after an error)<br>
@@ -191,14 +189,13 @@ function render(s) {
   $("quiz").classList.toggle("hidden", !s.question);
   const q = s.question; if (!q) { mediaKey = null; return; }
 
+  const ready = q.status === "ready";
   $("qnum").textContent = `Q${q.number}`;
-  $("domain").textContent = `${q.domain} › ${q.subdomain}`;
+  $("domain").textContent = ready ? `${q.domain} › ${q.subdomain}` : "";
   $("sh").textContent = s.scores.human; $("sa").textContent = s.scores.ai;
   $("pens").classList.toggle("hidden", !q.pens_down_at || q.claude);
   $("credit").textContent = q.status === "ready" ? q.credit : "";
-  const isLong = q.kind === "video" && q.duration > s.long_video;
-  $("len").classList.toggle("hidden", q.kind !== "video" || !q.duration);
-  $("len").classList.toggle("long", isLong);
+  $("len").classList.toggle("hidden", !ready || q.kind !== "video" || !q.duration);
   $("len").textContent = `▶ video ${fmt(q.duration || 0)}`;
   $("cstatus").textContent = q.claude_status === "pending" ? `Claude is thinking… ${fmt(q.claude_elapsed)}`
     : q.claude_status === "done" ? "Claude has answered" : q.claude_status === "error" ? "Claude's call failed" : "";
@@ -207,19 +204,19 @@ function render(s) {
   if (mediaKey !== key) {
     mediaKey = key;
     if (q.status === "loading") {
-      $("media").innerHTML = `<div class="loading"><span class="spinner"></span>Loading the ${esc(q.kind)}…</div>`;
+      $("media").innerHTML = `<div class="loading"><span class="spinner"></span>Loading the next question…</div>`;
     } else if (q.status === "error") {
       $("media").innerHTML = `<div class="loading"><div class="err">Couldn't load this ${esc(q.kind)}:\n${esc(q.error)}</div>Press <kbd>S</kbd> for another question</div>`;
     } else if (q.kind === "video") {
       $("media").innerHTML = `<video id="vid" src="${esc(q.media_url)}" muted loop playsinline preload="auto"></video>
         <span class="kind">video · ${fmt(q.duration || 0)} · no audio, looping</span>
         <div class="countdown hidden" id="cd"><div class="t">Read the question. The video starts in</div>
-          <div class="n" id="cdn"></div><div class="l ${isLong ? "long" : ""}">▶ ${fmt(q.duration || 0)} long${isLong ? " · press S to skip" : ""}</div></div>`;
+          <div class="n" id="cdn"></div><div class="l">▶ ${fmt(q.duration || 0)} long</div></div>`;
     } else {
       $("media").innerHTML = `<img src="${esc(q.media_url)}" alt=""><span class="kind">image</span>`;
     }
   }
-  setHTML("prompt", esc(q.prompt));
+  setHTML("prompt", ready ? esc(q.prompt) : "");
   $("side").classList.toggle("dense", !!(q.claude && q.ref));
 
   let aw = "";

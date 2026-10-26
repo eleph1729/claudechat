@@ -23,6 +23,9 @@ import re
 import shutil
 import subprocess
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -206,10 +209,12 @@ def require_tool(name: str) -> str:
     return path
 
 
-def probe_duration(source: str, timeout: float = 60) -> float:
-    """Duration in seconds of a video file."""
-    cmd = [require_tool("ffprobe"), "-v", "error", "-show_entries",
-           "format=duration:stream=duration", "-of", "json", source]
+def probe_duration(source: str, headers: Optional[str] = None, timeout: float = 60) -> float:
+    """Duration in seconds of a video file or URL (ffprobe reads only what it needs)."""
+    cmd = [require_tool("ffprobe"), "-v", "error"]
+    if headers:
+        cmd += ["-headers", headers]
+    cmd += ["-show_entries", "format=duration:stream=duration", "-of", "json", source]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip()[:300] or "ffprobe failed")
@@ -450,6 +455,13 @@ def load_json(path: Path, default: Any) -> Any:
         return default
 
 
+def save_json(path: Path, obj: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(obj, indent=1, sort_keys=True), encoding="utf-8")
+    tmp.replace(path)
+
+
 # --------------------------------------------------------------------------
 # Dataset access: the Hugging Face Hub, or a local copy laid out like it
 # --------------------------------------------------------------------------
@@ -473,6 +485,32 @@ class Dataset:
             return self.local / rel
         from huggingface_hub import hf_hub_download
         return Path(hf_hub_download(self.spec, rel, repo_type="dataset"))
+
+    def remote_duration(self, rel: str) -> float:
+        """A video's length, read in place: ffprobe fetches a few byte ranges, not the file."""
+        if self.local:
+            return probe_duration(str(self.local / rel))
+        from huggingface_hub import get_token, hf_hub_url
+        token = get_token()
+        url = hf_hub_url(self.spec, rel, repo_type="dataset")
+        hub_host = urllib.parse.urlsplit(url).netloc
+        # Follow the Hub's redirects ourselves: the final CDN URL is pre-signed and
+        # may reject a request that also carries an Authorization header.
+        for _ in range(5):
+            if urllib.parse.urlsplit(url).netloc != hub_host:
+                return probe_duration(url)
+            req = urllib.request.Request(url, method="HEAD")
+            if token:
+                req.add_header("Authorization", f"Bearer {token}")
+            try:
+                urllib.request.build_opener(_NoRedirect).open(req, timeout=30).close()
+                break                      # served directly by the Hub
+            except urllib.error.HTTPError as exc:
+                if exc.code not in (301, 302, 303, 307, 308) or not exc.headers.get("Location"):
+                    raise
+                url = urllib.parse.urljoin(url, exc.headers["Location"])
+        same_host = urllib.parse.urlsplit(url).netloc == hub_host
+        return probe_duration(url, f"Authorization: Bearer {token}\r\n" if token and same_host else None)
 
     def files(self) -> List[str]:
         if self.local:
@@ -517,6 +555,11 @@ class Dataset:
         for key, text in load_json(CREDIT_OVERRIDES, {}).items():
             index[str(key)] = str(text)
         return index
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
 
 
 def _read_table(path: Path) -> List[Dict[str, Any]]:
