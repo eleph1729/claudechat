@@ -172,7 +172,7 @@ def row_duration(row: Dict[str, Any]) -> Optional[float]:
 
 
 # Columns that might carry media attribution. The public loader only reads the
-# columns above, so which (if any) of these exist is discovered at prepare time.
+# columns above, so which (if any) of these exist is discovered when the task list loads.
 CREDIT_KEYS = ("credit", "credits", "media_credit", "attribution", "media_attribution",
                "author", "creator", "uploader", "photographer", "copyright", "owner")
 LICENSE_KEYS = ("license", "licence", "media_license", "license_name")
